@@ -4,45 +4,39 @@
   var D = {};
 
   /* ---------- Letter Explorer ---------- */
-  // Teaching order: common early-phonics order (SATPIN first), then the rest.
-  D.ORDER = 'SATPINMDGOCKEURHBFLJVWXYZQ'.split('');
-  // say = how the speech engine should pronounce the letter name on its own.
-  // m = the "mini moment" animation, s = its sound.
+  // A-to-Z path so the progress trail matches the alphabet song.
+  D.ORDER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  // w = example word (spoken by pre-recorded clips in audio/), e = picture, m = "mini moment" animation, s = its sound.
   D.LETTERS = {
-    A: { say: 'Ay',  w: 'Apple',      e: '\u{1F34E}', m: 'drop',   s: 'boing' },
-    B: { say: 'Bee', w: 'Ball',       e: '\u26BD',    m: 'bounce', s: 'boing' },
-    C: { say: 'See', w: 'Cat',        e: '\u{1F408}', m: 'walk',   s: 'meow' },
-    D: { say: 'Dee', w: 'Dinosaur',   e: '\u{1F996}', m: 'stomp',  s: 'stomp' },
-    E: { say: 'Ee',  w: 'Elephant',   e: '\u{1F418}', m: 'stomp',  s: 'trumpet' },
-    F: { say: 'Eff', w: 'Fish',       e: '\u{1F420}', m: 'swim',   s: 'bubble' },
-    G: { say: 'Jee', w: 'Giraffe',    e: '\u{1F992}', m: 'peek',   s: 'boing' },
-    H: { say: 'Aitch', w: 'Helicopter', e: '\u{1F681}', m: 'fly',  s: 'whoosh' },
-    I: { say: 'Eye', w: 'Ice cream',  e: '\u{1F366}', m: 'grow',   s: 'sparkle' },
-    J: { say: 'Jay', w: 'Jet',        e: '\u2708\uFE0F', m: 'fly', s: 'whoosh' },
-    K: { say: 'Kay', w: 'Kite',       e: '\u{1FA81}', m: 'kite',   s: 'whoosh' },
-    L: { say: 'Ell', w: 'Lion',       e: '\u{1F981}', m: 'peek',   s: 'roar' },
-    M: { say: 'Em',  w: 'Monkey',     e: '\u{1F412}', m: 'bounce', s: 'boing' },
-    N: { say: 'En',  w: 'Ninja',      e: '\u{1F977}', m: 'spin',   s: 'whoosh' },
-    O: { say: 'Oh',  w: 'Octopus',    e: '\u{1F419}', m: 'swim',   s: 'bubble' },
-    P: { say: 'Pee', w: 'Penguin',    e: '\u{1F427}', m: 'waddle', s: 'boing' },
-    Q: { say: 'Cue', w: 'Queen',      e: '\u{1F451}', m: 'grow',   s: 'sparkle' },
-    R: { say: 'Are', w: 'Rocket',     e: '\u{1F680}', m: 'blast',  s: 'blast' },
-    S: { say: 'Ess', w: 'Snake',      e: '\u{1F40D}', m: 'swim',   s: 'hiss' },
-    T: { say: 'Tee', w: 'Train',      e: '\u{1F682}', m: 'walk',   s: 'choo' },
-    U: { say: 'You', w: 'Umbrella',   e: '\u2602\uFE0F', m: 'float', s: 'sparkle' },
-    V: { say: 'Vee', w: 'Volcano',    e: '\u{1F30B}', m: 'erupt',  s: 'rumble' },
-    W: { say: 'Double you', w: 'Whale', e: '\u{1F433}', m: 'swim', s: 'bubble' },
-    X: { say: 'Ex',  w: 'Xylophone',  e: 'XYLO',      m: 'grow',   s: 'xylo' },
-    Y: { say: 'Why', w: 'Yo-yo',      e: '\u{1FA80}', m: 'yoyo',   s: 'boing' },
-    Z: { say: 'Zee', w: 'Zebra',      e: '\u{1F993}', m: 'walk',   s: 'gallop' }
+    A: { w: 'Apple',      e: '\u{1F34E}', m: 'drop',   s: 'boing' },
+    B: { w: 'Banana',     e: '\u{1F34C}', m: 'spin',   s: 'boing' },
+    C: { w: 'Cat',        e: '\u{1F408}', m: 'walk',   s: 'meow' },
+    D: { w: 'Dinosaur',   e: '\u{1F996}', m: 'stomp',  s: 'stomp' },
+    E: { w: 'Elephant',   e: '\u{1F418}', m: 'stomp',  s: 'trumpet' },
+    F: { w: 'Fish',       e: '\u{1F420}', m: 'swim',   s: 'bubble' },
+    G: { w: 'Giraffe',    e: '\u{1F992}', m: 'peek',   s: 'boing' },
+    H: { w: 'Helicopter', e: '\u{1F681}', m: 'fly',  s: 'whoosh' },
+    I: { w: 'Ice cream',  e: '\u{1F366}', m: 'grow',   s: 'sparkle' },
+    J: { w: 'Juice',      e: '\u{1F9C3}', m: 'grow',  s: 'bubble' },
+    K: { w: 'Kite',       e: '\u{1FA81}', m: 'kite',   s: 'whoosh' },
+    L: { w: 'Lion',       e: '\u{1F981}', m: 'peek',   s: 'roar' },
+    M: { w: 'Monkey',     e: '\u{1F412}', m: 'bounce', s: 'boing' },
+    N: { w: 'Ninja',      e: '\u{1F977}', m: 'spin',   s: 'whoosh' },
+    O: { w: 'Octopus',    e: '\u{1F419}', m: 'swim',   s: 'bubble' },
+    P: { w: 'Penguin',    e: '\u{1F427}', m: 'waddle', s: 'boing' },
+    Q: { w: 'Queen',      e: '\u{1F478}', m: 'grow',   s: 'sparkle' },
+    R: { w: 'Rocket',     e: '\u{1F680}', m: 'blast',  s: 'blast' },
+    S: { w: 'Snake',      e: '\u{1F40D}', m: 'swim',   s: 'hiss' },
+    T: { w: 'Train',      e: '\u{1F682}', m: 'walk',   s: 'choo' },
+    U: { w: 'Umbrella',   e: '\u2602\uFE0F', m: 'float', s: 'sparkle' },
+    V: { w: 'Volcano',    e: '\u{1F30B}', m: 'erupt',  s: 'rumble' },
+    W: { w: 'Whale', e: '\u{1F433}', m: 'swim', s: 'bubble' },
+    X: { w: 'Xylophone',  e: 'XYLO',      m: 'grow',   s: 'xylo' },
+    Y: { w: 'Yo-yo',      e: '\u{1FA80}', m: 'yoyo',   s: 'boing' },
+    Z: { w: 'Zebra',      e: '\u{1F993}', m: 'walk',   s: 'gallop' }
   };
   D.KID_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 
-  D.KID_CHEERS = ['Yay!', 'You did it!', 'Awesome!', 'High five!', 'Super duper!', 'Wow, great job!',
-    'Roar-some!', 'You are a letter superstar!', 'Woo hoo!', 'Amazing!', 'Ka-boom! You found it!', 'Hooray!'];
-  D.KID_OOPS = ['Oopsie! That is {X}. Let\u2019s find {T}!', 'Hmm, that is {X}. Can you find {T}?',
-    'Almost! Look for the glowing {T}!', 'Silly me! That is {X}. Where is {T}?'];
-  D.KID_TICKLE = ['Hee hee! That tickles!', 'Boop! You booped me!', 'Ha ha! Again! Again!', 'Hi friend!', 'Let\u2019s play!', 'Wheee!'];
   D.KID_NICKS = ['Dino Champ', 'Super Star', 'Captain Rocket', 'Little Lion', 'Turbo', 'Buddy Bear'];
 
   /* ---------- Ninja Academy ---------- */

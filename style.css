@@ -343,3 +343,15 @@ button:focus-visible{outline:4px solid #4dabf7;outline-offset:2px}
   .hands{height:10vh}
 }
 @media (max-height:520px){.hands{display:none}.buddy-wrap{height:80%}}
+
+/* progress trail (Letter Explorer) */
+.trail{flex:none;display:flex;flex-wrap:wrap;justify-content:center;gap:clamp(2px,.4vw,4px);padding:0 12px 4px;max-width:1100px;margin:0 auto}
+.td{width:clamp(20px,calc((100vw - 150px)/26),36px);height:clamp(20px,calc((100vw - 150px)/26),36px);border-radius:50%;background:#ffffffa0;border:2px dashed #fff;font-size:clamp(10px,1.6vw,16px);font-weight:900;color:#0005;display:flex;align-items:center;justify-content:center;flex:none;transition:background .3s}
+.td.got{background:#ffd43b;border:2px solid #f59f00;color:#7a4d00;box-shadow:0 2px 0 #e67700}
+.td.cur{background:#fff;border:3px solid #ff6b6b;color:#e03131;animation:dotglow 1s ease-in-out infinite}
+.td.pop{animation:dotpop .6s cubic-bezier(.3,1.6,.5,1)}
+.trail.champ .td{background:linear-gradient(#fff3bf,#fab005);border-color:#f08c00}
+@keyframes dotglow{50%{transform:scale(1.18);box-shadow:0 0 12px #ff6b6b}}
+@keyframes dotpop{0%{transform:scale(.4)}60%{transform:scale(1.5)}100%{transform:scale(1)}}
+
+@media (max-width:760px){.trail{max-width:calc(13 * 22px + 12 * 3px + 24px);gap:3px}.td{width:22px;height:22px;font-size:11px}}

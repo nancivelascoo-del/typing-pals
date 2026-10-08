@@ -1,11 +1,13 @@
 /* Typing Pals service worker: precache everything, serve cache-first, works offline.
    Bump VERSION whenever any file changes so the update rolls out on the next online visit. */
-var VERSION = 'typing-pals-v1';
+var VERSION = 'typing-pals-v2';
+importScripts('clips.js'); // defines self.TP_CLIPS (voice clip ids)
 var ASSETS = [
   './',
   './index.html',
   './style.css',
   './data.js',
+  './clips.js',
   './app.js',
   './manifest.webmanifest',
   './icons/apple-touch-icon.png',
@@ -13,7 +15,7 @@ var ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png'
-];
+].concat(Object.keys(self.TP_CLIPS || {}).map(function (id) { return './audio/' + id + '.mp3'; }));
 
 self.addEventListener('install', function (event) {
   event.waitUntil(

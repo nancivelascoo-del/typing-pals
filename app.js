@@ -23,6 +23,7 @@
   }
   function load() { try { return merge(defaults(), JSON.parse(localStorage.getItem(KEY) || 'null')); } catch (e) { return defaults(); } }
   var S = load();
+  migrateKid(S.kid);
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* private mode: play still works */ } }
 
   /* ================= helpers ================= */
@@ -44,11 +45,22 @@
 
   /* ================= sound (Web Audio, synthesized, no files) ================= */
   var AC = null, noiseBuf = null;
+  function actx() {
+    if (!AC) { var C = window.AudioContext || window.webkitAudioContext; if (!C) return null; try { AC = new C(); } catch (e) { return null; } }
+    return AC;
+  }
   function ac() {
     if (S.muted) return null;
-    if (!AC) { var C = window.AudioContext || window.webkitAudioContext; if (!C) return null; try { AC = new C(); } catch (e) { return null; } }
-    if (AC.state === 'suspended') { try { AC.resume(); } catch (e) {} }
-    return AC;
+    var a = actx(); if (!a) return null;
+    if (a.state !== 'running') { try { a.resume(); } catch (e) {} }
+    return a;
+  }
+  // iOS: audio only starts inside a user gesture; also let speech play even with the ring/silent switch on (Safari 17+).
+  function unlockAudio() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+    var a = actx(); if (!a) return;
+    if (a.state !== 'running') { try { a.resume(); } catch (e) {} }
+    try { var b = a.createBuffer(1, 1, 22050), s = a.createBufferSource(); s.buffer = b; s.connect(a.destination); s.start(0); } catch (e) {}
   }
   function tone(f, d, o) {
     o = o || {}; var a = ac(); if (!a) return;
@@ -100,9 +112,71 @@
     hit: function () { noise(0.1, { f: 900, vol: 0.3 }); tone(220, 0.08, { type: 'square', vol: 0.05 }); }
   };
 
-  /* ================= speech ================= */
+  /* ================= voice: pre-recorded clips (audio/*.mp3) via Web Audio ================= */
+  // Every letter name, "X is for ..." line, prompt and cheer is a verified recording, so letters sound
+  // the same on every device. The device speech engine is only a last-resort fallback if a clip can't load.
+  var CLIPS = window.TP_CLIPS || self.TP_CLIPS || {};
+  var clipBytes = {}, clipFetching = {}, decoded = {}, decodedOrder = [], speakTok = 0, curSrc = null;
+  var voiceStats = { played: 0, fallback: 0, failed: [] }, voiceLog = [];
+  function fetchClip(id) {
+    if (clipBytes[id]) return Promise.resolve(clipBytes[id]);
+    if (clipFetching[id]) return clipFetching[id];
+    clipFetching[id] = fetch('audio/' + id + '.mp3').then(function (r) { if (!r.ok) throw new Error('clip ' + r.status); return r.arrayBuffer(); })
+      .then(function (b) { clipBytes[id] = b; delete clipFetching[id]; return b; }, function (e) { delete clipFetching[id]; throw e; });
+    return clipFetching[id];
+  }
+  function decodeClip(id) {
+    if (decoded[id]) return Promise.resolve(decoded[id]);
+    var a = actx(); if (!a) return Promise.reject(new Error('no audio'));
+    return fetchClip(id).then(function (bytes) {
+      return new Promise(function (res, rej) {
+        var p = a.decodeAudioData(bytes.slice(0), res, rej); if (p && p.then) p.then(res, rej);
+      });
+    }).then(function (buf) {
+      decoded[id] = buf; decodedOrder.push(id);
+      if (decodedOrder.length > 40) delete decoded[decodedOrder.shift()];
+      return buf;
+    });
+  }
+  function preloadClips(ids) { ids.forEach(function (id) { fetchClip(id).catch(function () {}); }); }
+  function timeout(p, ms) { return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error('timeout')); }, ms); })]); }
+  function stopVoice() {
+    speakTok++;
+    if (curSrc) { try { curSrc.stop(); } catch (e) {} curSrc = null; }
+    if (synth) { try { synth.cancel(); } catch (e) {} }
+    setTalk(false);
+  }
+  function playClip(id, tok) {
+    voiceLog.push(id); if (voiceLog.length > 300) voiceLog.shift();
+    return timeout(decodeClip(id), 5000).then(function (buf) {
+      if (tok !== speakTok) return;
+      var a = ac();
+      if (!a || a.state !== 'running') return wait(Math.min(buf.duration * 1000, 2500)); // audio still locked: keep the game moving
+      return new Promise(function (res) {
+        var s = a.createBufferSource(), done = false; s.buffer = buf; s.connect(a.destination); curSrc = s;
+        function fin() { if (done) return; done = true; if (curSrc === s) curSrc = null; res(); }
+        s.onended = fin; setTimeout(fin, buf.duration * 1000 + 500); s.start(0); voiceStats.played++;
+      });
+    }).catch(function (e) {
+      if (tok !== speakTok) return;
+      voiceStats.fallback++; voiceStats.failed.push(id + ':' + (e && e.message));
+      return speechFallback(CLIPS[id] || '');
+    });
+  }
+  // Play a sequence of clip ids (falsy ids are skipped). Resolves when finished or interrupted.
+  function speak(ids) {
+    ids = (ids || []).filter(Boolean); stopVoice(); var tok = speakTok;
+    if (S.muted) { ids.forEach(function (id) { voiceLog.push(id); }); return wait(250); }
+    setTalk(true);
+    var p = Promise.resolve();
+    ids.forEach(function (id) { p = p.then(function () { if (tok === speakTok) return playClip(id, tok); }); });
+    return p.then(function () { if (tok === speakTok) setTalk(false); });
+  }
+  function hush() { stopVoice(); }
+
+  /* ----- device speech: fallback only ----- */
   var synth = ('speechSynthesis' in window && typeof window.SpeechSynthesisUtterance === 'function') ? window.speechSynthesis : null;
-  var voice = null, sayId = 0;
+  var voice = null;
   function pickVoice() {
     if (!synth) return;
     var vs = []; try { vs = synth.getVoices() || []; } catch (e) {}
@@ -114,25 +188,19 @@
   }
   if (synth) { pickVoice(); if (synth.addEventListener) synth.addEventListener('voiceschanged', pickVoice); }
   function setTalk(on) { var b = $('#app .buddy'); if (b) b.classList.toggle('talk', !!on); }
-  // Resolves when speech ends (or after a short pause when muted / unsupported).
-  function say(text, opt) {
-    opt = opt || {}; var id = ++sayId; var est = 600 + text.length * 65;
+  function speechFallback(text) {
+    var est = 600 + text.length * 65;
     return new Promise(function (resolve) {
-      var finished = false;
-      function end() { if (finished) return; finished = true; if (id === sayId) setTalk(false); resolve(); }
-      if (S.muted || !synth) { setTalk(!S.muted); setTimeout(end, S.muted ? 300 : Math.min(est, 2500)); return; }
+      var finished = false; function end() { if (!finished) { finished = true; resolve(); } }
+      if (!text || !synth) { setTimeout(end, Math.min(est, 2000)); return; }
       try {
-        synth.cancel();
         var u = new window.SpeechSynthesisUtterance(text);
         if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = 'en-US';
-        u.rate = opt.rate || 0.95; u.pitch = opt.pitch || 1.25; u.volume = 1;
-        u.onend = end; u.onerror = end;
-        setTimeout(end, est + 3500);
-        setTalk(true); synth.speak(u);
+        u.rate = 0.95; u.pitch = 1.2; u.onend = end; u.onerror = end;
+        setTimeout(end, est + 3000); synth.speak(u);
       } catch (e) { setTimeout(end, 400); }
     });
   }
-  function hush() { sayId++; setTalk(false); if (synth) { try { synth.cancel(); } catch (e) {} } }
 
   /* ================= buddy characters (inline SVG) ================= */
   function buddySVG(kind, color) {
@@ -211,7 +279,7 @@
     b.addEventListener('pointerdown', function (e) {
       e.preventDefault(); e.stopPropagation(); var r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 3;
       b.remove(); SFX.pop(); var bm = h('div', 'boom', '\u{1F4A5}'); bm.style.left = x + 'px'; bm.style.top = y + 'px'; fx.appendChild(bm);
-      setTimeout(function () { bm.remove(); }, 600); burst(x, y, ['\u2B50', '\u2728', '\u{1F31F}'], 10); buddyDo('cheer', 1400); say(pick(['Pop!', 'Ka-pow!', 'Boom! Pop!']));
+      setTimeout(function () { bm.remove(); }, 600); burst(x, y, ['\u2B50', '\u2728', '\u{1F31F}'], 10); buddyDo('cheer', 1400); speak(['pop-' + (1 + Math.floor(Math.random() * 3))]);
     });
     fx.appendChild(b); setTimeout(function () { b.remove(); }, 6200);
   }
@@ -232,6 +300,7 @@
   /* ================= router ================= */
   var cur = null, SCREENS = {};
   function go(name, arg) {
+    if (name === 'home' && reloadOnHome) { location.reload(); return; }
     if (cur && cur.cleanup) cur.cleanup();
     closeModal(); clearFx(); hush(); app.innerHTML = '';
     cur = SCREENS[name](arg) || {}; cur.name = name; window.scrollTo(0, 0);
@@ -312,9 +381,9 @@
       box.innerHTML = '<h2>' + (isKid ? '\u{1F43E} Pick your buddy' : '\u{1F977} Pick your avatar') + '</h2><div class="chips">' + avs + '</div>' +
         '<h3>\u{1F3A8} Color</h3><div class="chips">' + cols + '</div><h3>\u{1F3F7}\uFE0F Nickname (optional)</h3><div class="chips">' + nicks + '</div>' +
         '<div><button class="big-btn" data-done>\u2714\uFE0F Done</button></div>';
-      $$('[data-av]', box).forEach(function (b) { b.addEventListener('click', function () { P.avatar = b.dataset.av; SFX.tap(); if (isKid) say(b.dataset.av === 'robot' ? 'Beep boop! I am Robo!' : 'Roar! I am Dino!'); render(); }); });
+      $$('[data-av]', box).forEach(function (b) { b.addEventListener('click', function () { P.avatar = b.dataset.av; SFX.tap(); if (isKid) speak([b.dataset.av === 'robot' ? 'robo' : 'dino']); render(); }); });
       $$('[data-col]', box).forEach(function (b) { b.addEventListener('click', function () { P.color = b.dataset.col; SFX.star(); render(); }); });
-      $$('[data-nick]', box).forEach(function (b) { b.addEventListener('click', function () { P.nick = b.dataset.nick; SFX.tap(); if (P.nick) say(P.nick + '!'); render(); }); });
+      $$('[data-nick]', box).forEach(function (b) { b.addEventListener('click', function () { P.nick = b.dataset.nick; SFX.tap(); if (P.nick) speak([nickClip(who, P.nick)]); render(); }); });
       $('[data-done]', box).addEventListener('click', done);
     }
     render();
@@ -343,18 +412,59 @@
   }
 
   /* ================= LETTER EXPLORER ================= */
+  // Progression (pure functions so they can be tested): walk A->Z; every correct find of a new letter
+  // moves on to the next new letter; one quick review after every 4 new letters; never the same letter
+  // twice in a row; after all 26 a "mix it up" mode with random letters.
+  var REVIEW_EVERY = 4;
+  function validStickers(st) { var o = {}; D.ORDER.forEach(function (L) { if (st && st[L]) o[L] = true; }); return o; }
+  function migrateKid(K) {
+    if (K.v === 2) return K;
+    K.stickers = validStickers(K.stickers); delete K.rounds;
+    K.sinceReview = 0; K.last = null; K.cur = null; K.champ = D.ORDER.every(function (L) { return K.stickers[L]; }); K.v = 2;
+    return K;
+  }
+  var kidProgress = {
+    next: function (K, rnd) { // returns {L, kind: 'new'|'review'|'mix'}
+      rnd = rnd || Math.random;
+      var fresh = D.ORDER.filter(function (L) { return !K.stickers[L]; });
+      var notLast = function (L) { return L !== K.last; };
+      if (!fresh.length) { var all = D.ORDER.filter(notLast); return { L: all[Math.floor(rnd() * all.length)], kind: 'mix' }; }
+      var earned = D.ORDER.filter(function (L) { return K.stickers[L] && L !== K.last; });
+      if ((K.sinceReview || 0) >= REVIEW_EVERY && earned.length) return { L: earned[Math.floor(rnd() * earned.length)], kind: 'review' };
+      return { L: fresh[0], kind: 'new' };
+    },
+    found: function (K, t) { // call on a correct find; returns true if a new sticker was earned
+      var isNew = !K.stickers[t.L];
+      if (isNew) { K.stickers[t.L] = true; K.sinceReview = (K.sinceReview || 0) + 1; }
+      if (t.kind === 'review') K.sinceReview = 0;
+      K.last = t.L; K.cur = null; K.finds = (K.finds || 0) + 1;
+      return isNew;
+    }
+  };
+  function nickClip(who, nick) { var list = who === 'kid' ? D.KID_NICKS : D.NINJA_NICKS, i = list.indexOf(nick); return i >= 0 ? 'nick-' + who + '-' + i : null; }
+
   SCREENS.ex = function () {
-    var K = S.kid, mode = 'learn', target = null, round = 0, busy = false, wrong = 0, hintT = null, lastReview = null, lastFree = 0, alive = true;
+    var K = migrateKid(S.kid); save();
+    var mode = 'learn', tgt = null, round = 0, busy = false, wrong = 0, hintT = null, lastFree = 0, alive = true;
     var s = h('div', 'screen'); s.id = 'ex';
     s.innerHTML = '<div class="ex-top"><button class="round-btn" data-home aria-label="Home">\u{1F3E0}</button>' +
       '<button class="tab on" data-tab="learn" aria-label="Find the letter">\u{1F3AF}</button><button class="tab" data-tab="free" aria-label="Free play">\u{1F3B9}</button>' +
       '<button class="tab" data-tab="book" aria-label="Sticker book">\u{1F4D2}</button><div class="count">\u2B50 <span id="stkCount">' + stickerCount() + '</span>/26</div></div>' +
+      '<div class="trail" id="trail">' + D.ORDER.map(function (L) { return '<span class="td" data-l="' + L + '">' + L + '</span>'; }).join('') + '</div>' +
       '<div class="ex-stage"><div class="buddy-wrap" id="buddyWrap">' + buddySVG(K.avatar, K.color) + '<div class="bubble" id="bubble"></div></div>' +
       '<div class="lcard" id="lcard"></div></div>';
     var kbd = kidKeyboard(); s.appendChild(kbd); app.appendChild(s);
-    var card = $('#lcard', s);
-    function sayL(L) { return D.LETTERS[L].say; }
-    function nick(p) { return K.nick && Math.random() < (p || 0.35) ? ', ' + K.nick : ''; }
+    var card = $('#lcard', s), trail = $('#trail', s);
+    var lc = function (L, k) { return L.toLowerCase() + '-' + k; };
+    var nick = function (p) { return Math.random() < (p || 0.35) ? nickClip('kid', K.nick) : null; };
+    preloadClips(Object.keys(CLIPS).filter(function (id) { return !/^nick-ninja/.test(id); }));
+    function renderTrail() {
+      $$('.td', trail).forEach(function (d) {
+        var L = d.dataset.l; d.classList.toggle('got', !!K.stickers[L]); d.classList.toggle('cur', mode === 'learn' && !!tgt && tgt.L === L);
+      });
+      trail.classList.toggle('champ', D.ORDER.every(function (L) { return K.stickers[L]; }));
+      $('#stkCount', s).textContent = stickerCount();
+    }
     function showCard(L, showSpeak) {
       var col = ['#ff6b6b', '#339af0', '#f76707', '#7048e8', '#2f9e44', '#e64980'][L.charCodeAt(0) % 6];
       card.style.setProperty('--lc', col);
@@ -364,42 +474,34 @@
     }
     function clearGlow() { $$('.key.glow', kbd).forEach(function (k) { k.classList.remove('glow', 'hint'); }); }
     function setTab(t) { $$('.tab', s).forEach(function (b) { b.classList.toggle('on', b.dataset.tab === t); }); }
-    function nextTarget() {
-      var earned = D.ORDER.filter(function (L) { return K.stickers[L]; });
-      var fresh = D.ORDER.filter(function (L) { return !K.stickers[L]; })[0];
-      K.rounds = (K.rounds || 0) + 1;
-      if (!fresh || (earned.length >= 2 && K.rounds % 3 === 0)) {
-        var pool = earned.filter(function (L) { return L !== lastReview; }); var r = pick(pool.length ? pool : earned); lastReview = r; return r;
-      }
-      return fresh;
-    }
     function prompt(again) {
-      var L = target; if (!L) return;
-      var w = D.LETTERS[L].w;
-      if (again) say('Find ' + sayL(L) + '! ' + sayL(L) + ' is for ' + w + '!');
-      else say(sayL(L) + '! ' + sayL(L) + ' is for ' + w + '! Can you find ' + sayL(L) + nick(0.25) + '?');
+      if (!tgt) return; var L = tgt.L;
+      return speak(again ? [lc(L, 'findit'), lc(L, 'word')] : [lc(L, 'name'), lc(L, 'word'), lc(L, 'find')]);
     }
     function armHints(r) {
       clearTimeout(hintT); var n = 0;
       (function loop() {
         hintT = setTimeout(function () {
-          if (!alive || r !== round || busy || mode !== 'learn') return;
-          n++; var k = keyEl(target); if (k) k.classList.add('hint');
-          buddyDo('think', 1500); bubble('\u{1F447}'); say('Find ' + sayL(target) + '! Look for the glowing key!');
+          if (!alive || r !== round || busy || mode !== 'learn' || modalEl) return;
+          n++; var k = keyEl(tgt.L); if (k) k.classList.add('hint');
+          buddyDo('think', 1500); bubble('\u{1F447}'); speak([lc(tgt.L, 'findit'), lc(tgt.L, 'glow')]);
           if (n < 3) loop();
         }, n === 0 ? 9000 : 12000);
       })();
     }
     function newRound() {
       if (!alive || mode !== 'learn') return;
-      round++; busy = false; wrong = 0; target = nextTarget(); save();
-      clearGlow(); showCard(target, true); var k = keyEl(target); if (k) k.classList.add('glow');
-      prompt(false); armHints(round);
+      round++; busy = false; wrong = 0;
+      // resume an unfinished target (after the sticker book, free play, or a reload) instead of re-rolling
+      if (K.cur && K.cur.L && D.LETTERS[K.cur.L] && (K.cur.kind !== 'new' || !K.stickers[K.cur.L])) tgt = K.cur;
+      else { tgt = kidProgress.next(K); K.cur = tgt; }
+      save(); clearGlow(); showCard(tgt.L, true); var k = keyEl(tgt.L); if (k) k.classList.add('glow');
+      renderTrail(); prompt(false); armHints(round);
     }
     function startLearn() { mode = 'learn'; setTab('learn'); newRound(); }
     function startFree() {
-      mode = 'free'; round++; setTab('free'); busy = false; clearTimeout(hintT); clearGlow(); target = null;
-      card.innerHTML = '<div class="ex-play-hint">\u{1F3B9}</div>'; say('Free play! Press any letter' + nick(0.5) + '!'); buddyDo('dance', 1800);
+      mode = 'free'; round++; setTab('free'); busy = false; clearTimeout(hintT); clearGlow(); tgt = null; renderTrail();
+      card.innerHTML = '<div class="ex-play-hint">\u{1F3B9}</div>'; speak(['free', nick(0.5)]); buddyDo('dance', 1800);
     }
     function reaction() {
       var r = pick(['dance', 'cheer', 'highfive', 'silly', 'spin']); buddyDo(r, 2000);
@@ -407,67 +509,68 @@
       return r;
     }
     function correct() {
-      busy = true; clearTimeout(hintT); var r = round, L = target, isNew = !K.stickers[L];
+      busy = true; clearTimeout(hintT); var r = round, t = tgt, L = t.L;
+      var isNew = kidProgress.found(K, t); save();
       SFX.good(); flashKey(L, 'good', 700); clearGlow();
       var kc = center(keyEl(L)); burst(kc.x, kc.y, ['\u2B50', '\u{1F31F}', '\u2728'], 12);
-      var react = reaction(); K.finds = (K.finds || 0) + 1;
+      var react = reaction();
       setTimeout(function () { if (alive) moment(L); }, 250);
-      var line = (react === 'highfive' ? 'High five!' : pick(D.KID_CHEERS)) + nick() + ' ' + sayL(L) + ' is for ' + D.LETTERS[L].w + '!';
-      var talk = say(line);
+      var talk = speak([react === 'highfive' ? 'cheer-4' : 'cheer-' + (1 + Math.floor(Math.random() * 12)), nick(), lc(L, 'word'), isNew ? 'sticker' : null]);
       if (isNew) {
-        K.stickers[L] = true; save();
         setTimeout(function () {
           if (!alive) return;
-          var tab = $('[data-tab="book"]', s), tc = center(tab), st = h('div', 'flysticker', pic(L));
+          var dot = $('.td[data-l="' + L + '"]', trail), tc = center(dot), st = h('div', 'flysticker', pic(L));
           st.style.setProperty('--tx', (tc.x - innerWidth / 2) + 'px'); st.style.setProperty('--ty', (tc.y - innerHeight / 2) + 'px');
           fx.appendChild(st); SFX.sticker();
-          setTimeout(function () { st.remove(); if (!alive) return; $('#stkCount', s).textContent = stickerCount(); burst(tc.x, tc.y, ['\u2728', '\u2B50'], 8, 80); }, 1200);
+          setTimeout(function () { st.remove(); if (!alive) return; renderTrail(); dot.classList.remove('pop'); void dot.offsetWidth; dot.classList.add('pop'); burst(tc.x, tc.y, ['\u2728', '\u2B50'], 8, 80); }, 1200);
         }, 1300);
       }
-      if (Math.random() < 0.45) setTimeout(function () { if (alive) balloon(); }, 900);
-      var n = stickerCount(), milestone = isNew && (n % 5 === 0 || n === 26);
+      if (Math.random() < 0.4) setTimeout(function () { if (alive) balloon(); }, 900);
+      var n = stickerCount(), finale = isNew && n === 26, milestone = isNew && !finale && n % 5 === 0;
       Promise.all([talk, wait(isNew ? 2900 : 2300)]).then(function () {
         if (!alive || r !== round || mode !== 'learn') return;
-        if (milestone) {
-          confetti(); buddyDo('dance', 2600); SFX.win();
-          return say(n === 26 ? 'You found every letter! You are a letter champion!' : 'Wow! ' + n + ' stickers! You are amazing!').then(function () { return wait(600); });
+        if (finale) {
+          K.champ = true; save(); confetti(); setTimeout(confetti, 900); setTimeout(confetti, 1800); buddyDo('dance', 4000); SFX.win(); renderTrail();
+          return speak(['all']).then(function () { if (alive && r === round) { buddyDo('spin', 1200); return speak(['mix']); } });
         }
+        if (milestone) { confetti(); buddyDo('dance', 2600); SFX.win(); return speak(['stk-' + n]).then(function () { return wait(400); }); }
       }).then(function () { if (alive && r === round && mode === 'learn' && !modalEl) newRound(); });
     }
     function oops(k) {
       wrong++; SFX.oops(); flashKey(k, 'bad', 450); card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
       buddyDo(pick(['silly', 'think']), 1400); bubble(pick(['\u{1F914}', '\u{1F61C}', '\u{1F643}']));
-      say(pick(D.KID_OOPS).replace(/\{X\}/g, sayL(k)).replace(/\{T\}/g, sayL(target)));
-      if (wrong >= 2) { var t = keyEl(target); if (t) t.classList.add('hint'); }
+      var T = tgt.L, X = k, v = Math.floor(Math.random() * 4);
+      speak(v === 2 ? ['oops-3', lc(T, 'glow')] : ['oops-' + (v + 1), lc(X, 'that'), lc(T, 'find')]);
+      if (wrong >= 2) { var e = keyEl(T); if (e) e.classList.add('hint'); }
       armHints(round);
     }
     function free(L) {
       var now = Date.now(); if (now - lastFree < 220) return; lastFree = now;
       showCard(L, false); moment(L); reaction(); SFX.star();
       var kc = center(keyEl(L)); burst(kc.x, kc.y, ['\u2B50', '\u2728', '\u{1F308}'], 8);
-      say(sayL(L) + '! ' + sayL(L) + ' is for ' + D.LETTERS[L].w + '!');
+      speak([lc(L, 'name'), lc(L, 'word')]);
       if (Math.random() < 0.15) balloon();
     }
     function onKey(k) {
       if (modalEl) return; var L = String(k).toUpperCase(); if (!/^[A-Z]$/.test(L)) return;
       pressAnim(L);
       if (mode === 'free') return free(L);
-      if (busy || !target) return;
-      if (L === target) correct(); else oops(L);
+      if (busy || !tgt) return;
+      if (L === tgt.L) correct(); else oops(L);
     }
     function book() {
       var cells = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(function (L) {
         var got = K.stickers[L];
         return '<button class="stk' + (got ? ' got' : '') + '" data-l="' + L + '" aria-label="' + L + '">' + (got ? pic(L) : '\u2753') + '<b>' + L + L.toLowerCase() + '</b></button>';
       }).join('');
-      clearTimeout(hintT); round++; busy = true;
+      clearTimeout(hintT); round++; busy = true; $$('.balloon', fx).forEach(function (b) { b.remove(); });
       var m = openModal('<h2>\u{1F4D2} \u2B50 ' + stickerCount() + ' / 26</h2><div class="book">' + cells + '</div>', { onClose: function () { if (mode === 'learn') newRound(); else busy = false; } });
-      say(stickerCount() ? 'Your sticker book! Tap a sticker!' : 'Your sticker book! Find letters to get stickers!');
+      speak([stickerCount() ? 'book' : 'book-empty']);
       $$('.stk', m).forEach(function (b) {
         b.addEventListener('click', function () {
           var L = b.dataset.l;
-          if (K.stickers[L]) { SFX.star(); moment(L); say(sayL(L) + '! ' + sayL(L) + ' is for ' + D.LETTERS[L].w + '!'); b.style.transform = 'scale(1.15) rotate(-6deg)'; setTimeout(function () { b.style.transform = ''; }, 300); }
-          else { SFX.oops(); say('Keep exploring to find this sticker!'); }
+          if (K.stickers[L]) { SFX.star(); moment(L); speak([lc(L, 'name'), lc(L, 'word')]); b.style.transform = 'scale(1.15) rotate(-6deg)'; setTimeout(function () { b.style.transform = ''; }, 300); }
+          else { SFX.oops(); speak(['keep']); }
         });
       });
     }
@@ -479,14 +582,21 @@
         if (t === 'free') startFree(); else startLearn();
       });
     });
+    trail.addEventListener('pointerdown', function (e) {
+      var d = e.target.closest ? e.target.closest('.td') : null; if (!d || !K.stickers[d.dataset.l] || busy) return;
+      e.preventDefault(); SFX.star(); var r = round, L = d.dataset.l;
+      speak([lc(L, 'name'), lc(L, 'word')]).then(function () { if (alive && r === round && mode === 'learn' && !busy && tgt) prompt(true); });
+    });
     $('#buddyWrap', s).addEventListener('pointerdown', function (e) {
       e.preventDefault(); SFX.giggle(); buddyDo(pick(['silly', 'dance', 'highfive', 'spin']), 1500); bubble('\u{1F602}');
-      var r = round; say(pick(D.KID_TICKLE)).then(function () { if (alive && r === round && mode === 'learn' && !busy && target) prompt(true); });
+      var r = round; speak(['tickle-' + (1 + Math.floor(Math.random() * 6))]).then(function () { if (alive && r === round && mode === 'learn' && !busy && tgt) prompt(true); });
     });
     bindTaps(kbd, onKey);
-    Promise.race([say('Hi' + (K.nick ? ' ' + K.nick : '') + '! Let\u2019s find letters!'), wait(2600)]).then(function () { if (alive && mode === 'learn' && !target && !modalEl) startLearn(); });
+    renderTrail();
+    Promise.race([speak(['hi', nickClip('kid', K.nick), 'letsfind']), wait(3200)]).then(function () { if (alive && mode === 'learn' && !tgt && !modalEl) startLearn(); });
     buddyDo('highfive', 1400);
-    return { onKey: onKey, cleanup: function () { alive = false; clearTimeout(hintT); }, state: function () { return { mode: mode, target: target, busy: busy, wrong: wrong }; }, startLearn: startLearn };
+    return { onKey: onKey, cleanup: function () { alive = false; clearTimeout(hintT); },
+      state: function () { return { mode: mode, target: tgt && tgt.L, kind: tgt && tgt.kind, busy: busy, wrong: wrong }; }, startLearn: startLearn };
   };
 
   /* ================= NINJA ACADEMY ================= */
@@ -845,19 +955,26 @@
     if (e.repeat) return;
     if (cur && cur.onKey) cur.onKey(k, 'kbd');
   });
-  // first touch unlocks audio on iOS
-  document.addEventListener('pointerdown', function () { ac(); }, { once: true });
+  // unlock audio on the first touch / key press (iOS requires a user gesture)
+  ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { document.addEventListener(ev, function () { if (!AC || AC.state !== 'running') unlockAudio(); }, true); });
 
   var mb = document.getElementById('muteBtn');
   function muteIcon() { mb.textContent = S.muted ? '\u{1F507}' : '\u{1F50A}'; mb.setAttribute('aria-pressed', S.muted ? 'true' : 'false'); }
   mb.addEventListener('click', function () { S.muted = !S.muted; save(); muteIcon(); if (S.muted) hush(); else SFX.tap(); });
   muteIcon();
 
+  var reloadOnHome = false;
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    var hadController = !!navigator.serviceWorker.controller;
+    // when an update takes over, reload into the new version at the next calm moment (home screen)
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController) { hadController = true; return; }
+      if (cur && cur.name === 'home' && !modalEl) location.reload(); else reloadOnHome = true;
+    });
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
 
   // test/debug hook (local only)
-  window.__tp = { state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
+  window.__tp = { kidProgress: kidProgress, migrateKid: migrateKid, voiceStats: voiceStats, voiceLog: voiceLog, clips: CLIPS, decodeClip: decodeClip, state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
   go('home');
 })();
