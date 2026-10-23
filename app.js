@@ -265,14 +265,14 @@
       fx.appendChild(p); (function (pp) { setTimeout(function () { pp.remove(); }, 1300); })(p);
     }
   }
-  function confetti() { for (var i = 0; i < 4; i++) (function (i) { setTimeout(function () { burst(innerWidth * (0.15 + Math.random() * 0.7), innerHeight * (0.2 + Math.random() * 0.4), ['\u{1F389}', '\u2B50', '\u2728', '\u{1F38A}', '\u{1F31F}'], 14, 240); }, i * 220); })(i); }
+  function confetti() { for (var i = 0; i < 4; i++) (function (i) { fxLater(function () { burst(innerWidth * (0.15 + Math.random() * 0.7), innerHeight * (0.2 + Math.random() * 0.4), ['\u{1F389}', '\u2B50', '\u2728', '\u{1F38A}', '\u{1F31F}'], 14, 240); }, i * 220); })(i); }
   function quake() { var s = $('#app .screen'); if (!s) return; s.classList.remove('quake'); void s.offsetWidth; s.classList.add('quake'); setTimeout(function () { s.classList.remove('quake'); }, 1600); }
   function moment(L) {
     var info = D.LETTERS[L]; var olds = $$('.mo', fx); if (olds.length > 2) olds[0].remove();
     var m = h('div', 'mo ' + info.m, '<span>' + pic(L) + '</span>'); fx.appendChild(m);
     if (SFX[info.s]) SFX[info.s]();
     if (info.m === 'stomp') quake();
-    if (info.m === 'erupt') { quake(); setTimeout(function () { burst(innerWidth / 2, innerHeight / 2 - 60, ['\u{1F525}', '\u2728', '\u{1F4A5}'], 16, 260); }, 500); }
+    if (info.m === 'erupt') { quake(); fxLater(function () { burst(innerWidth / 2, innerHeight / 2 - 60, ['\u{1F525}', '\u2728', '\u{1F4A5}'], 16, 260); }, 500); }
     setTimeout(function () { m.remove(); }, 4300);
   }
   function balloon() {
@@ -285,7 +285,10 @@
     });
     fx.appendChild(b); setTimeout(function () { b.remove(); }, 6200);
   }
-  function clearFx() { fx.innerHTML = ''; }
+  // timers for celebration effects: cleared when the screen changes, so confetti never spills onto the next screen
+  var fxTimers = [];
+  function fxLater(fn, ms) { var id = setTimeout(function () { var i = fxTimers.indexOf(id); if (i >= 0) fxTimers.splice(i, 1); fn(); }, ms); fxTimers.push(id); return id; }
+  function clearFx() { fxTimers.forEach(clearTimeout); fxTimers = []; fx.innerHTML = ''; }
 
   /* ================= modal ================= */
   var modalEl = null, modalEnter = null, modalEsc = null;
@@ -537,7 +540,7 @@
       Promise.all([talk, wait(isNew ? 2900 : 2300)]).then(function () {
         if (!alive || r !== round || mode !== 'learn') return;
         if (finale) {
-          K.champ = true; save(); confetti(); setTimeout(confetti, 900); setTimeout(confetti, 1800); buddyDo('dance', 4000); SFX.win(); renderTrail();
+          K.champ = true; save(); confetti(); fxLater(confetti, 900); fxLater(confetti, 1800); buddyDo('dance', 4000); SFX.win(); renderTrail();
           return speak(['all']).then(function () { if (alive && r === round) { buddyDo('spin', 1200); return speak(['mix']); } });
         }
         if (milestone) { confetti(); buddyDo('dance', 2600); SFX.win(); return speak(['stk-' + n]).then(function () { return wait(400); }); }
@@ -634,7 +637,8 @@
   }
   function addXP(n) {
     var before = beltIndex(S.ninja.xp); S.ninja.xp += Math.max(0, Math.round(n)); var after = beltIndex(S.ninja.xp);
-    if (after > before) setTimeout(function () { SFX.levelup(); confetti(); toast('\u{1F94B} Rank up! You earned your ' + D.BELTS[after].n + '!', 3500); }, 1200);
+    if (after > before) fxLater(confetti, 1200);
+    if (after > before) setTimeout(function () { SFX.levelup(); toast('\u{1F94B} Rank up! You earned your ' + D.BELTS[after].n + '!', 3500); }, 1200);
   }
   function touchDay() {
     var d = S.ninja.days, t = todayStr(), y = new Date(); y.setDate(y.getDate() - 1);
@@ -986,7 +990,7 @@
     var bonus = (opts && opts.bonus) || 0;
     S.read.stars = readStars() + stars + bonus; save();
     var ev = feedPet(stars + bonus);
-    SFX.win(); confetti(); if (stars === 3) setTimeout(confetti, 800);
+    SFX.win(); confetti(); if (stars === 3) fxLater(confetti, 800);
     var m = openModal('<h2>\u{1F389} All done!</h2><div class="res-stars">' + [1, 2, 3].map(function (n) { return '<span class="' + (stars >= n ? '' : 'dimst') + '">\u2B50</span>'; }).join('') + '</div>' +
       (bonus ? '<p class="rd-bonus">+' + bonus + ' \u{1F34E}</p>' : '') +
       '<div class="res-pet ev-' + ev + '">' + petHTML('sm') + '</div>' +
@@ -995,7 +999,7 @@
     m.classList.add('results');
     $('[data-again]', m).addEventListener('click', function () { SFX.tap(); then('again'); });
     $('[data-hub]', m).addEventListener('click', function () { SFX.tap(); then('hub'); });
-    if (ev === 'hatch' || ev === 'new') setTimeout(function () { SFX.levelup(); confetti(); }, 900); else if (ev === 'grow') setTimeout(SFX.sticker, 900);
+    if (ev === 'hatch' || ev === 'new') fxLater(function () { SFX.levelup(); confetti(); }, 900); else if (ev === 'grow') fxLater(SFX.sticker, 900);
     speak(['gm-done', extraClip || null, 'pt-' + ev]);
   }
   function readTop(title, n) {
@@ -1661,6 +1665,6 @@
   }
 
   // test/debug hook (local only)
-  window.__tp = { petStage: petStage, feedPet: feedPet, strokes: STROKES, today: today, soStages: SO_STAGES, soPool: soPool, phonics: PH, canSound: canSound, kidProgress: kidProgress, migrateKid: migrateKid, voiceStats: voiceStats, voiceLog: voiceLog, clips: CLIPS, decodeClip: decodeClip, state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
+  window.__tp = { screens: Object.keys(SCREENS), confetti: confetti, fxPending: function () { return fxTimers.length; }, petStage: petStage, feedPet: feedPet, strokes: STROKES, today: today, soStages: SO_STAGES, soPool: soPool, phonics: PH, canSound: canSound, kidProgress: kidProgress, migrateKid: migrateKid, voiceStats: voiceStats, voiceLog: voiceLog, clips: CLIPS, decodeClip: decodeClip, state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
   go('home');
 })();

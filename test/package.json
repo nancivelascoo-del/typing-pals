@@ -1,0 +1,16 @@
+{
+  "name": "typing-pals-qa",
+  "private": true,
+  "description": "Automatic QA checks for Typing Pals (run by GitHub Actions on every push and pull request)",
+  "scripts": {
+    "sweep": "node qa-sweep.js",
+    "full": "node full-test.js chromium",
+    "audio": "node audio-progress-test.js",
+    "reading": "node reading-test.js",
+    "reading-v2": "node reading-v2-test.js",
+    "offline": "node live-offline.js"
+  },
+  "devDependencies": {
+    "playwright": "1.59.1"
+  }
+}
