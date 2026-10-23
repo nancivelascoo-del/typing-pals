@@ -37,6 +37,32 @@
   };
   D.KID_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 
+  /* ---------- Reading Fun (Rio's kindergarten reading practice) ---------- */
+  // Sound It Out: short-vowel CVC words (must match tools/clips_def.py CVC; every letter needs a phonics clip).
+  D.READ = {
+    PICS: { cat: '\u{1F431}', bat: '\u{1F987}', hat: '\u{1F3A9}', rat: '\u{1F400}', map: '\u{1F5FA}\uFE0F', cap: '\u{1F9E2}', man: '\u{1F468}',
+      pan: '\u{1F373}', bag: '\u{1F45C}', can: '\u{1F96B}', ram: '\u{1F40F}', sad: '\u{1F622}', cab: '\u{1F695}',
+      bed: '\u{1F6CF}\uFE0F', hen: '\u{1F414}', pen: '\u{1F58A}\uFE0F', net: '\u{1F945}', web: '\u{1F578}\uFE0F', ten: '\u{1F51F}', red: '\u{1F7E5}',
+      leg: '\u{1F9B5}', wet: '\u{1F4A6}',
+      pig: '\u{1F437}', pin: '\u{1F4CC}', lip: '\u{1F444}', six: '6\uFE0F\u20E3', kid: '\u{1F9D2}', dig: '\u26CF\uFE0F', bin: '\u{1F5D1}\uFE0F',
+      dog: '\u{1F436}', log: '\u{1FAB5}', box: '\u{1F4E6}', fox: '\u{1F98A}', pot: '\u{1F372}', hot: '\u{1F525}', mom: '\u{1F469}', hog: '\u{1F417}',
+      dot: '\u26AB', rod: '\u{1F3A3}',
+      sun: '\u2600\uFE0F', bus: '\u{1F68C}', cup: '\u{1F964}', bug: '\u{1F41B}', nut: '\u{1F95C}', hut: '\u{1F6D6}', tub: '\u{1F6C1}', run: '\u{1F3C3}', mug: '\u2615' },
+    CVC: { a: ['cat', 'bat', 'hat', 'rat', 'map', 'cap', 'man', 'pan', 'bag', 'can', 'ram', 'sad', 'cab'],
+      e: ['hen', 'pen', 'net', 'web', 'ten', 'red', 'leg', 'wet'],
+      i: ['pig', 'pin', 'lip', 'six', 'kid', 'dig', 'bin'],
+      o: ['dog', 'log', 'box', 'fox', 'pot', 'hot', 'mom', 'hog', 'dot', 'rod'],
+      u: ['sun', 'bus', 'cup', 'bug', 'tub', 'run', 'mug'] },
+    VOWELS: ['a', 'e', 'i', 'o', 'u'],
+    // Big and Little: look-alike choices for each letter (lowercase; uppercased for "find big")
+    LOOKS: { a: 'deo', b: 'dpq', c: 'eos', d: 'bpq', e: 'aco', f: 'tlj', g: 'qpy', h: 'nbk', i: 'ljt', j: 'igy', k: 'hxy', l: 'itj', m: 'nwu',
+      n: 'mhu', o: 'ace', p: 'qbd', q: 'pgd', r: 'nft', s: 'zce', t: 'fli', u: 'nvw', v: 'uwy', w: 'mvu', x: 'kyz', y: 'vgj', z: 'sxn' },
+    BIG_LOOKS: { B: 'DPR', D: 'BOP', P: 'BRD', Q: 'OGP', R: 'PBK', E: 'FBH', F: 'EPT', M: 'NWH', N: 'MHZ', W: 'MVN', O: 'QCD', G: 'CQO',
+      I: 'LTJ', L: 'ITJ', U: 'VJO', V: 'UYW', A: 'HRV', H: 'NAK' },
+    // letters whose big and little shapes differ most come up more often
+    TRICKY: 'ABDEGHNQRT'
+  };
+
   D.KID_NICKS = ['Dino Champ', 'Super Star', 'Captain Rocket', 'Little Lion', 'Turbo', 'Buddy Bear'];
 
   /* ---------- Ninja Academy ---------- */

@@ -10,7 +10,8 @@
     return { v: 1, muted: false,
       kid: { avatar: 'dino', color: '#51cf66', nick: '', stickers: {}, finds: 0, rounds: 0 },
       ninja: { avatar: D.NINJA_AVATARS[0], color: '#339af0', nick: '', xp: 0, m: {}, pb: 0, badges: {}, arcadeHi: 0,
-        bestCombo: 0, days: { last: '', count: 0 }, kbSeen: false, introSeen: false } };
+        bestCombo: 0, days: { last: '', count: 0 }, kbSeen: false, introSeen: false },
+      read: { stars: 0, so: { stage: 0, best: {}, plays: 0 }, bl: { plays: 0, best: 0 }, bd: { plays: 0, best: 0, pq: false } } };
   }
   function merge(base, extra) {
     if (!extra || typeof extra !== 'object') return base;
@@ -343,7 +344,7 @@
     var title = 'Typing Pals'.split('').map(function (c) { return c === ' ' ? '&nbsp;' : '<span>' + c + '</span>'; }).join('');
     var belt = D.BELTS[beltIndex(S.ninja.xp)];
     s.innerHTML = '<div class="home-title">' + title + '</div>' +
-      '<div class="cards">' +
+      '<div class="cards three">' +
       '<div class="pcard kid" role="button" tabindex="0" data-go="ex" aria-label="Letter Explorer" style="--pc:' + S.kid.color + '">' +
         '<button class="edit" data-edit="kid" aria-label="Change buddy">\u{1F3A8}</button>' +
         '<div class="av">' + buddySVG(S.kid.avatar, S.kid.color) + '</div>' +
@@ -354,6 +355,10 @@
         '<div class="av">' + S.ninja.avatar + '</div>' +
         '<div class="info" style="display:flex;flex-direction:column;align-items:center;gap:6px"><div class="nm">' + esc(S.ninja.nick || 'Ninja Keys Academy') + '</div>' +
         '<div class="sub"><span class="belt" style="--bc:' + belt.c + '"><i></i>' + belt.n + '</span></div><div class="sub">\u2328\uFE0F Ten-finger typing</div></div></div>' +
+      '<div class="pcard read" role="button" tabindex="0" data-go="read" aria-label="Reading Fun">' +
+        '<div class="av rd-av">\u{1F4DA}</div>' +
+        '<div class="info" style="display:flex;flex-direction:column;align-items:center;gap:6px"><div class="nm">Reading Fun</div>' +
+        '<div class="abc">c\u00B7a\u00B7t</div><div class="sub">\u2B50 ' + (S.read.stars || 0) + '</div></div></div>' +
       '</div><button class="grown" data-grown>Grown-ups</button>';
     app.appendChild(s);
     $$('.pcard', s).forEach(function (c) {
@@ -399,9 +404,10 @@
     var m = openModal('<h2>For grown-ups</h2>' +
       '<p class="note"><b>Letter Explorer</b> (ages 4\u20136): a talking buddy says each letter and a word, and the matching key glows. Tap the key or press it on a keyboard. No reading needed. Each letter found earns a sticker, and \u{1F3B9} is free play.</p>' +
       '<p class="note"><b>Ninja Keys Academy</b> (ages 8+): real ten-finger touch typing, starting from the home row. Missions earn stars, XP and belts, with a boss battle at the end of each zone and a Meteor Strike arcade game. A real keyboard works best (an iPad with a Bluetooth or Smart Keyboard works too).</p>' +
+      '<p class="note"><b>Reading Fun</b> (kindergarten): three short tap games. <b>Sound It Out</b>: the buddy says each sound of a 3-letter word slowly (c\u2026 a\u2026 t) and your child taps the matching picture; \u{1F442} levels are listening only, \u{1F440} levels light up the letters too. Starts with short a, then e, i, o, u, then a mix; two stars opens the next level (\u{1F5FA}\uFE0F picks any open level). <b>Big and Little</b>: match uppercase and lowercase letters. <b>b or d?</b>: find every b (or d), with the \u201Cbed\u201D trick; p and q join after a good round.</p>' +
       '<p class="note">\u{1F512} No accounts, ads, links or tracking. Nothing is sent anywhere. Progress is saved only on this device and browser. After the first visit it works offline from the Home Screen icon.</p>' +
       '<h3>Reset progress (press and hold)</h3>' +
-      '<button class="big-btn red hold" data-r="kid">Reset Letter Explorer</button><button class="big-btn red hold" data-r="ninja">Reset Ninja Academy</button>');
+      '<button class="big-btn red hold" data-r="kid">Reset Letter Explorer</button><button class="big-btn red hold" data-r="ninja">Reset Ninja Academy</button><button class="big-btn red hold" data-r="read">Reset Reading Fun</button>');
     $$('[data-r]', m).forEach(function (b) {
       holdButton(b, 2500, function () {
         var who = b.dataset.r, d = defaults(), keep = { avatar: S[who].avatar, color: S[who].color, nick: S[who].nick };
@@ -943,6 +949,315 @@
     return { onKey: onKey, onEsc: function () { go('ninja'); }, cleanup: function () { A.on = false; cancelAnimationFrame(raf); window.removeEventListener('resize', size); document.removeEventListener('visibilitychange', vis); }, state: function () { return A; }, keys: keys };
   };
 
+  /* ================= READING FUN (Rio: Big and Little, b or d?, Sound It Out) ================= */
+  // Built on Letter Explorer's buddy + recorded voice. Phonics SOUNDS are recorded clips (audio/ph-*.mp3, made by
+  // tools/gen_phonics.py), never the device speech engine reading letter names.
+  var RD = D.READ, PH = window.TP_PHONICS || self.TP_PHONICS || {}, PH_SAY = window.TP_PHONICS_SAY || self.TP_PHONICS_SAY || {};
+  Object.keys(PH).forEach(function (L) { if (!(PH[L] in CLIPS)) CLIPS[PH[L]] = PH_SAY[L] || L; });
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function canSound(w) { return w.split('').every(function (c) { return !!PH[c]; }) && !!CLIPS['w-' + w]; }
+  var SO_STAGES = [];
+  RD.VOWELS.forEach(function (v) { SO_STAGES.push({ v: v, look: false }); SO_STAGES.push({ v: v, look: true }); });
+  SO_STAGES.push({ v: 'mix', look: true });
+  function soPool(st) {
+    var ws = st.v === 'mix' ? RD.VOWELS.reduce(function (a, v) { return a.concat(RD.CVC[v]); }, []) : RD.CVC[st.v];
+    return ws.filter(canSound);
+  }
+  function readStars() { return S.read.stars || 0; }
+  function dots(n) { var o = ''; for (var i = 0; i < n; i++) o += '<span class="rdot" data-i="' + i + '"></span>'; return '<div class="rd-dots">' + o + '</div>'; }
+  function fillDot(s, i, good) { var d = $('.rdot[data-i="' + i + '"]', s); if (d) { d.classList.add(good ? 'star' : 'done'); d.textContent = good ? '\u2B50' : '\u2714\uFE0F'; } }
+  function sessionStars(firstTry, n) { return firstTry >= n ? 3 : firstTry >= Math.ceil(n * 0.6) ? 2 : 1; }
+  // play each letter's SOUND with a clear pause between them; onEach(i) fires as sound i starts, onEach(-1) at the end
+  function saySounds(word, gap, onEach) {
+    stopVoice(); var tok = speakTok, p = Promise.resolve();
+    setTalk(true);
+    word.split('').forEach(function (ch, i) {
+      p = p.then(function () {
+        if (tok !== speakTok) return;
+        if (onEach) onEach(i);
+        if (S.muted) { voiceLog.push(PH[ch]); return wait(450); }
+        return playClip(PH[ch], tok);
+      }).then(function () { if (tok === speakTok && i < word.length - 1) return wait(gap); });
+    });
+    return p.then(function () { var ok = tok === speakTok; if (ok) setTalk(false); if (onEach) onEach(-1); return ok; });
+  }
+  function resultModal(stars, then, extraClip) {
+    S.read.stars = readStars() + stars; save();
+    SFX.win(); confetti(); if (stars === 3) setTimeout(confetti, 800);
+    var m = openModal('<h2>\u{1F389} All done!</h2><div class="res-stars">' + [1, 2, 3].map(function (n) { return '<span class="' + (stars >= n ? '' : 'dimst') + '">\u2B50</span>'; }).join('') + '</div>' +
+      '<p class="note rd-total">\u2B50 ' + readStars() + '</p>' +
+      '<div><button class="big-btn gold rd-big" data-again aria-label="Play again">\u21BB \u25B6</button><button class="big-btn blue rd-big" data-hub aria-label="Reading games">\u{1F4DA}</button></div>',
+      { close: false, onEnter: function () { then('again'); }, onEsc: function () { then('hub'); } });
+    m.classList.add('results');
+    $('[data-again]', m).addEventListener('click', function () { SFX.tap(); then('again'); });
+    $('[data-hub]', m).addEventListener('click', function () { SFX.tap(); then('hub'); });
+    speak(['gm-done', extraClip || null]);
+  }
+  function readTop(title, n) {
+    return '<div class="rd-top"><button class="round-btn" data-back aria-label="Back">\u2B05\uFE0F</button><div class="rd-title">' + title + '</div>' + (n ? dots(n) : '') + '</div>';
+  }
+  function miniBuddy() { return '<div class="buddy-wrap rd-buddy" id="buddyWrap">' + buddySVG(S.kid.avatar, S.kid.color) + '<div class="bubble" id="bubble"></div></div>'; }
+  function tickleBuddy(s, again) {
+    $('#buddyWrap', s).addEventListener('pointerdown', function (e) {
+      e.preventDefault(); SFX.giggle(); buddyDo(pick(['silly', 'dance', 'highfive', 'spin']), 1500); bubble('\u{1F602}');
+      speak(['tickle-' + (1 + Math.floor(Math.random() * 6))]).then(function () { if (again) again(); });
+    });
+  }
+
+  /* ----- hub ----- */
+  SCREENS.read = function () {
+    var s = h('div', 'screen'); s.id = 'read';
+    var so = S.read.so, st = SO_STAGES[Math.min(so.stage, SO_STAGES.length - 1)];
+    s.innerHTML = '<div class="rd-top"><button class="round-btn" data-home aria-label="Home">\u{1F3E0}</button><div class="rd-title">\u{1F4DA} Reading Fun</div><div class="count">\u2B50 ' + readStars() + '</div></div>' +
+      '<div class="rd-hub">' + miniBuddy() +
+      '<div class="rd-games">' +
+      '<button class="rgame so" data-g="so" aria-label="Sound It Out"><span class="ic">\u{1F442}</span><b>Sound It Out</b><span class="demo">c \u00B7 a \u00B7 t = \u{1F431}</span><small>' + (st.v === 'mix' ? 'mix' : st.v) + ' ' + (st.look ? '\u{1F440}' : '\u{1F442}') + '</small></button>' +
+      '<button class="rgame bl" data-g="bl" aria-label="Big and Little"><span class="ic big-little"><span>B</span><span>b</span></span><b>Big and Little</b></button>' +
+      '<button class="rgame bd" data-g="bd" aria-label="b or d"><span class="ic bdic"><span>b</span><span class="q">?</span><span>d</span></span><b>b or d?</b></button>' +
+      '</div></div>';
+    app.appendChild(s);
+    $('[data-home]', s).addEventListener('click', function () { SFX.tap(); go('home'); });
+    $$('.rgame', s).forEach(function (b) { b.addEventListener('click', function () { SFX.good(); go(b.dataset.g); }); });
+    tickleBuddy(s);
+    speak(['rd-hi']); buddyDo('highfive', 1400);
+    return { onKey: function () {}, onEsc: function () { go('home'); } };
+  };
+
+  /* ----- Sound It Out: hear c... a... t, tap the picture ----- */
+  SCREENS.so = function (stageArg) {
+    var R = S.read.so, si = Math.min(stageArg != null ? stageArg : R.stage, SO_STAGES.length - 1), stage = SO_STAGES[si];
+    var N = 5, pool = soPool(stage), words = shuffle(pool), list = [];
+    while (list.length < N) list = list.concat(shuffle(words).filter(function (w) { return list[list.length - 1] !== w; }));
+    list = list.slice(0, N);
+    var alive = true, idx = -1, target = null, wrong = 0, firstTry = 0, busy = true, round = 0, hintT = null, hints = 0;
+    var s = h('div', 'screen'); s.id = 'so';
+    s.innerHTML = readTop('\u{1F442} Sound It Out <span class="lvl">' + (stage.v === 'mix' ? 'mix' : stage.v) + ' ' + (stage.look ? '\u{1F440}' : '\u{1F442}') + '</span>', N) +
+      '<div class="so-stage">' + miniBuddy() + '<button class="so-replay" data-replay aria-label="Hear the sounds again">\u{1F50A}</button>' +
+      '<div class="so-tiles" id="tiles"></div></div><div class="so-pics" id="pics"></div>' +
+      '<button class="so-map round-btn" data-map aria-label="Levels">\u{1F5FA}\uFE0F</button>';
+    app.appendChild(s);
+    var tilesEl = $('#tiles', s), picsEl = $('#pics', s);
+    preloadClips(Object.keys(PH).map(function (L) { return PH[L]; }).concat(pool.map(function (w) { return 'w-' + w; })));
+    function tiles(show) {
+      tilesEl.className = 'so-tiles' + (show ? '' : ' hide');
+      tilesEl.innerHTML = target.split('').map(function (c, i) { return '<span class="tile" data-i="' + i + '">' + c + '</span>'; }).join('');
+    }
+    function light(i) {
+      $$('.tile', tilesEl).forEach(function (t, j) { t.classList.toggle('on', j === i); if (i >= 0 && j < i) t.classList.add('seen'); if (j === i) t.classList.add('seen'); });
+    }
+    function play(intro) {
+      clearTimeout(hintT); var r = round;
+      var pre = intro && intro.length ? speak(intro).then(function () { return wait(250); }) : wait(150);
+      return pre.then(function () { if (alive && r === round && !busy) return saySounds(target, 750, stage.look ? light : null); })
+        .then(function (ok) { if (ok && alive && r === round && !busy) armHint(r); return ok; });
+    }
+    function armHint(r) {
+      clearTimeout(hintT);
+      if (hints >= 2) return;
+      hintT = setTimeout(function () { if (!alive || r !== round || busy || modalEl) return; hints++; buddyDo('think', 1500); bubble('\u{1F442}'); play(['so-again']); }, 11000);
+    }
+    function next() {
+      if (!alive) return; idx++; round++; wrong = 0; hints = 0;
+      if (idx >= N) return done();
+      target = list[idx];
+      var others = shuffle(pool.filter(function (w) { return w !== target && RD.PICS[w] !== RD.PICS[target]; }));
+      // prefer choices that start with a different sound, so the first sound alone already helps
+      others.sort(function (a, b) { return (a[0] === target[0]) - (b[0] === target[0]); });
+      var choices = shuffle([target, others[0], others[1]]);
+      picsEl.innerHTML = choices.map(function (w) { return '<button class="pic-btn" data-w="' + w + '" aria-label="' + w + '"><span>' + RD.PICS[w] + '</span></button>'; }).join('');
+      $$('.pic-btn', picsEl).forEach(function (b) { b.addEventListener('click', function () { tap(b); }); });
+      tiles(stage.look);
+      busy = false;
+      var intro = idx === 0 ? ['so-listen'] : [];
+      play(intro).then(function (ok) { if (ok && alive && !busy && idx < 2) speak(['so-what']); });
+    }
+    function tap(b) {
+      if (busy || b.classList.contains('no')) return;
+      var w = b.dataset.w, r = round;
+      if (w === target) {
+        busy = true; clearTimeout(hintT); stopVoice();
+        if (!wrong) { firstTry++; }
+        fillDot(s, idx, !wrong); SFX.good(); b.classList.add('good');
+        $$('.pic-btn', picsEl).forEach(function (o) { if (o !== b) o.classList.add('fade'); });
+        var c = center(b); burst(c.x, c.y, ['\u2B50', '\u{1F31F}', '\u2728'], 12);
+        buddyDo(pick(['dance', 'cheer', 'highfive']), 2000); bubble(pick(['\u{1F60D}', '\u{1F929}', '\u{1F389}', '\u{1F44F}']));
+        tiles(true); tilesEl.classList.add('reveal');
+        speak(['cheer-' + (1 + Math.floor(Math.random() * 12))]).then(function () { if (alive && r === round) return wait(200); })
+          .then(function () { if (alive && r === round) return saySounds(target, 260, light); })
+          .then(function () { if (!alive || r !== round) return; tilesEl.classList.add('blend'); SFX.star(); return speak(['w-' + target]); })
+          .then(function () { return wait(900); })
+          .then(function () { if (alive && r === round && !modalEl) next(); });
+      } else {
+        wrong++; SFX.oops(); b.classList.add('no'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+        buddyDo(pick(['silly', 'think']), 1400); bubble(pick(['\u{1F914}', '\u{1F643}']));
+        clearTimeout(hintT);
+        speak(['oops-' + (1 + Math.floor(Math.random() * 3)), 'so-thatone', 'w-' + w, 'so-again']).then(function () {
+          if (alive && r === round && !busy) play([]);
+        });
+      }
+    }
+    function done() {
+      busy = true; var stars = sessionStars(firstTry, N), unlocked = false;
+      R.best[si] = Math.max(R.best[si] || 0, stars);
+      if (stars >= 2 && si === R.stage && si < SO_STAGES.length - 1) { R.stage++; unlocked = true; }
+      R.plays = (R.plays || 0) + 1; save();
+      var nextStage = unlocked ? R.stage : si;
+      resultModal(stars, function (what) { if (what === 'again') go('so', nextStage); else go('read'); }, unlocked ? 'so-unlock' : 'so-done');
+    }
+    function stageMap() {
+      busy = true; clearTimeout(hintT); hush();
+      var cells = SO_STAGES.map(function (st, i) {
+        var open = i <= R.stage, b = R.best[i] || 0;
+        return '<button class="stg' + (open ? '' : ' locked') + (i === si ? ' cur' : '') + '" data-s="' + i + '"' + (open ? '' : ' aria-disabled="true"') + ' aria-label="level ' + (i + 1) + '">' +
+          '<b>' + (st.v === 'mix' ? '\u{1F308}' : st.v) + '</b><span>' + (open ? (st.look ? '\u{1F440}' : '\u{1F442}') : '\u{1F512}') + '</span><small>' + (b ? '\u2B50'.repeat(b) : '&nbsp;') + '</small></button>';
+      }).join('');
+      var m = openModal('<h2>\u{1F5FA}\uFE0F</h2><div class="stg-grid">' + cells + '</div><p class="note">\u{1F442} = listen only \u00B7 \u{1F440} = see the letters too. Two stars opens the next level.</p>',
+        { onClose: function () { busy = false; play([]); } });
+      $$('.stg', m).forEach(function (b) { b.addEventListener('click', function () { var i = +b.dataset.s; if (i > R.stage) { SFX.err(); return; } SFX.good(); go('so', i); }); });
+    }
+    $('[data-back]', s).addEventListener('click', function () { SFX.tap(); go('read'); });
+    $('[data-replay]', s).addEventListener('click', function () { if (busy) return; SFX.tap(); hints = 0; play([]); });
+    $('[data-map]', s).addEventListener('click', function () { SFX.tap(); stageMap(); });
+    tickleBuddy(s, function () { if (alive && !busy) play([]); });
+    var first = !R.plays && si === 0;
+    Promise.race([speak(first ? ['so-hi'] : stage.look && si % 2 === 1 && !(R.best[si]) ? ['so-look'] : []), wait(first ? 2600 : 1800)]).then(function () { if (alive && idx < 0) next(); });
+    return { onKey: function () {}, onEsc: function () { go('read'); }, cleanup: function () { alive = false; clearTimeout(hintT); },
+      state: function () { return { stage: si, look: stage.look, idx: idx, target: target, list: list, firstTry: firstTry, busy: busy, wrong: wrong }; } };
+  };
+
+  /* ----- Big and Little: match uppercase and lowercase ----- */
+  SCREENS.bl = function () {
+    var N = 6, R = S.read.bl, alive = true, idx = -1, round = 0, wrong = 0, firstTry = 0, busy = true, T = null, dir = 'little', hintT = null;
+    var tricky = shuffle(RD.TRICKY.split('')), rest = shuffle(D.ORDER.filter(function (L) { return RD.TRICKY.indexOf(L) < 0; }));
+    var list = []; for (var i = 0; i < N; i++) list.push(i % 3 === 2 ? rest[i] : tricky[i]);
+    var s = h('div', 'screen'); s.id = 'bl';
+    s.innerHTML = readTop('<span class="big-little sm"><span>A</span><span>a</span></span> Big and Little', N) +
+      '<div class="bl-stage">' + miniBuddy() + '<div class="bl-card" id="blc" role="button" aria-label="Hear it again"></div></div><div class="bl-choices" id="blch"></div>';
+    app.appendChild(s);
+    var card = $('#blc', s), ch = $('#blch', s);
+    function show(L) { return dir === 'little' ? L : L.toLowerCase(); }
+    function want(L) { return dir === 'little' ? L.toLowerCase() : L; }
+    function prompt() { return speak(['bl-' + T.toLowerCase() + '-' + dir]); }
+    function arm() { clearTimeout(hintT); var r = round; hintT = setTimeout(function () { if (alive && r === round && !busy && !modalEl) { var g = $('.lt-btn[data-l="' + want(T) + '"]', ch); if (g) g.classList.add('hint'); prompt(); } }, 10000); }
+    function next() {
+      if (!alive) return; idx++; round++; wrong = 0;
+      if (idx >= N) return done();
+      T = list[idx]; dir = Math.random() < 0.65 ? 'little' : 'big';
+      var looks = dir === 'little' ? RD.LOOKS[T.toLowerCase()].split('') : (RD.BIG_LOOKS[T] || RD.LOOKS[T.toLowerCase()].toUpperCase()).split('');
+      var opts = shuffle([want(T)].concat(shuffle(looks).slice(0, 2)));
+      card.innerHTML = '<span class="' + (dir === 'little' ? 'up' : 'lo') + '">' + show(T) + '</span><small>' + (dir === 'little' ? '\u2192 \u{1F539}' : '\u2192 \u{1F537}') + '</small>';
+      card.classList.remove('pop', 'matched'); void card.offsetWidth; card.classList.add('pop');
+      ch.innerHTML = opts.map(function (o) { return '<button class="lt-btn" data-l="' + o + '" aria-label="' + o + '">' + o + '</button>'; }).join('');
+      $$('.lt-btn', ch).forEach(function (b) { b.addEventListener('click', function () { tap(b); }); });
+      busy = false; (idx === 0 && !R.plays ? speak(['bl-hi']).then(function () { if (alive && !busy) return prompt(); }) : prompt()); arm();
+    }
+    function tap(b) {
+      if (busy || b.classList.contains('no')) return;
+      var l = b.dataset.l, r = round;
+      if (l === want(T)) {
+        busy = true; clearTimeout(hintT); if (!wrong) firstTry++; fillDot(s, idx, !wrong);
+        SFX.good(); b.classList.add('good'); var c = center(b); burst(c.x, c.y, ['\u2B50', '\u2728', '\u{1F31F}'], 12);
+        card.innerHTML = '<span class="up">' + T + '</span><span class="lo">' + T.toLowerCase() + '</span>'; card.classList.add('matched');
+        buddyDo(pick(['dance', 'cheer', 'highfive', 'spin']), 1800); bubble(pick(['\u{1F60D}', '\u{1F929}', '\u{1F389}']));
+        speak(['cheer-' + (1 + Math.floor(Math.random() * 12)), 'bl-' + T.toLowerCase() + '-match']).then(function () { return wait(600); })
+          .then(function () { if (alive && r === round && !modalEl) next(); });
+      } else {
+        wrong++; SFX.oops(); b.classList.add('no'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+        buddyDo(pick(['silly', 'think']), 1300); bubble('\u{1F914}');
+        if (wrong >= 2) { var g = $('.lt-btn[data-l="' + want(T) + '"]', ch); if (g) g.classList.add('hint'); }
+        speak(['oops-' + (1 + Math.floor(Math.random() * 3)), l.toLowerCase() + '-that', 'bl-' + T.toLowerCase() + '-' + dir]); arm();
+      }
+    }
+    function done() {
+      busy = true; var stars = sessionStars(firstTry, N); R.plays = (R.plays || 0) + 1; R.best = Math.max(R.best || 0, stars); save();
+      resultModal(stars, function (w) { go(w === 'again' ? 'bl' : 'read'); });
+    }
+    card.addEventListener('click', function () { if (!busy) { SFX.tap(); prompt(); } });
+    $('[data-back]', s).addEventListener('click', function () { SFX.tap(); go('read'); });
+    tickleBuddy(s, function () { if (alive && !busy) prompt(); });
+    setTimeout(function () { if (alive) next(); }, 400);
+    return { onKey: function () {}, onEsc: function () { go('read'); }, cleanup: function () { alive = false; clearTimeout(hintT); },
+      state: function () { return { idx: idx, target: T, dir: dir, want: T && want(T), firstTry: firstTry, busy: busy }; } };
+  };
+
+  /* ----- b or d? Letter detective (and p / q) ----- */
+  var TWIN = { b: 'd', d: 'b', p: 'q', q: 'p' };
+  function bedClue() {
+    return '<div class="bed" data-clue="bd" role="button" aria-label="The bed trick"><span class="bl" data-l="b">b</span><span class="be">e</span><span class="bl" data-l="d">d</span>' +
+      '<i class="mattress"></i><i class="pillow"></i><span class="zz">\u{1F634}</span></div>';
+  }
+  function pqClue() {
+    return '<div class="pq" data-clue="pq" role="button" aria-label="The p and q trick"><div class="col"><span class="bl" data-l="b">b</span><span class="ar">\u2B07\uFE0F</span><span class="bl" data-l="p">p</span></div>' +
+      '<div class="col"><span class="bl" data-l="d">d</span><span class="ar">\u2B07\uFE0F</span><span class="bl" data-l="q">q</span></div></div>';
+  }
+  SCREENS.bd = function () {
+    var N = 5, R = S.read.bd, alive = true, idx = -1, round = 0, clean = 0, busy = true, T = null, left = 0, missed = false, told = {}, hintT = null;
+    var plan = R.pq ? shuffle(['b', 'd']).concat(shuffle(['p', 'q'])).concat([pick(['b', 'd', 'p', 'q'])]) : ['b', 'd', 'b', 'd', pick(['b', 'd'])];
+    var s = h('div', 'screen'); s.id = 'bd';
+    s.innerHTML = readTop('\u{1F575}\uFE0F b or d?', N) +
+      '<div class="bd-stage">' + miniBuddy() + '<div class="bd-clue" id="clue"></div><button class="bd-ask" id="ask" aria-label="Hear it again"></button></div><div class="bd-grid" id="grid"></div>';
+    app.appendChild(s);
+    var clue = $('#clue', s), ask = $('#ask', s), grid = $('#grid', s);
+    function tipClip() { return T === 'b' || T === 'd' ? 'bd-bed' : 'bd-pq'; }
+    function prompt() { return speak(['bd-' + T + '-every']); }
+    function arm() { clearTimeout(hintT); var r = round; hintT = setTimeout(function () { if (alive && r === round && !busy && !modalEl) { $$('.bd-t', grid).forEach(function (t) { if (t.dataset.l === T && !t.classList.contains('found')) t.classList.add('hint'); }); prompt(); } }, 12000); }
+    function next() {
+      if (!alive) return; idx++; round++; missed = false;
+      if (idx >= N) return done();
+      T = plan[idx];
+      var isBD = T === 'b' || T === 'd';
+      clue.innerHTML = isBD ? bedClue() : pqClue();
+      $('[data-clue]', clue).addEventListener('click', function () { if (busy) return; SFX.tap(); clue.classList.add('pulse'); speak([tipClip()]).then(function () { clue.classList.remove('pulse'); }); });
+      ask.innerHTML = '<span class="mag">\u{1F50D}</span><span class="tl">' + T + '</span>';
+      var n = 3, tiles = [];
+      for (var i = 0; i < n; i++) tiles.push(T);
+      for (i = 0; i < 6 - n; i++) tiles.push(TWIN[T]);
+      if (R.pq && idx >= 2) tiles[5] = pick(isBD ? ['p', 'q'] : ['b', 'd']);
+      left = n;
+      grid.innerHTML = shuffle(tiles).map(function (l) { return '<button class="bd-t" data-l="' + l + '" aria-label="' + l + '">' + l + '</button>'; }).join('');
+      $$('.bd-t', grid).forEach(function (b) { b.addEventListener('click', function () { tap(b); }); });
+      busy = false;
+      var intro = idx === 0 ? (R.plays ? [] : ['bd-hi']) : [];
+      if (!isBD && !told.pq) { intro.push('bd-pq'); told.pq = true; clue.classList.add('pulse'); setTimeout(function () { clue.classList.remove('pulse'); }, 4000); }
+      speak(intro.concat(['bd-' + T + '-every'])); arm();
+    }
+    function tap(b) {
+      if (busy || b.classList.contains('found')) return;
+      var l = b.dataset.l, r = round;
+      if (l === T) {
+        b.classList.add('found'); b.classList.remove('hint'); left--; SFX.good(); var c = center(b); burst(c.x, c.y, ['\u2B50', '\u2728'], 8, 90); arm();
+        if (left <= 0) {
+          busy = true; clearTimeout(hintT); if (!missed) clean++; fillDot(s, idx, !missed);
+          buddyDo(pick(['dance', 'cheer', 'highfive']), 1800); bubble(pick(['\u{1F575}\uFE0F', '\u{1F929}', '\u{1F389}']));
+          speak(['cheer-' + (1 + Math.floor(Math.random() * 12)), 'bd-all']).then(function () { return wait(500); }).then(function () { if (alive && r === round && !modalEl) next(); });
+        }
+      } else {
+        missed = true; SFX.oops(); b.classList.remove('shake', 'nope'); void b.offsetWidth; b.classList.add('shake', 'nope');
+        setTimeout(function () { b.classList.remove('nope'); }, 2600);
+        buddyDo('think', 1400); bubble('\u{1F914}');
+        // gentle correction: show where that letter lives in the clue, then say the trick
+        var cl = $('[data-l="' + l + '"]', clue); clue.classList.add('pulse'); if (cl) cl.classList.add('glow');
+        var needTip = !told[l + T];
+        told[l + T] = true;
+        speak([l + '-that', needTip || Math.random() < 0.5 ? tipClip() : null, 'bd-' + T + '-every']).then(function () {
+          clue.classList.remove('pulse'); if (cl) cl.classList.remove('glow');
+        });
+        arm();
+      }
+    }
+    function done() {
+      busy = true; var stars = sessionStars(clean, N); R.plays = (R.plays || 0) + 1; R.best = Math.max(R.best || 0, stars);
+      if (stars >= 2) R.pq = true; save();
+      resultModal(stars, function (w) { go(w === 'again' ? 'bd' : 'read'); });
+    }
+    ask.addEventListener('click', function () { if (!busy) { SFX.tap(); prompt(); } });
+    $('[data-back]', s).addEventListener('click', function () { SFX.tap(); go('read'); });
+    tickleBuddy(s, function () { if (alive && !busy) prompt(); });
+    setTimeout(function () { if (alive) next(); }, 400);
+    return { onKey: function () {}, onEsc: function () { go('read'); }, cleanup: function () { alive = false; clearTimeout(hintT); },
+      state: function () { return { idx: idx, target: T, left: left, clean: clean, busy: busy, plan: plan }; } };
+  };
+
   /* ================= global input ================= */
   document.addEventListener('keydown', function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -975,6 +1290,6 @@
   }
 
   // test/debug hook (local only)
-  window.__tp = { kidProgress: kidProgress, migrateKid: migrateKid, voiceStats: voiceStats, voiceLog: voiceLog, clips: CLIPS, decodeClip: decodeClip, state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
+  window.__tp = { soStages: SO_STAGES, soPool: soPool, phonics: PH, canSound: canSound, kidProgress: kidProgress, migrateKid: migrateKid, voiceStats: voiceStats, voiceLog: voiceLog, clips: CLIPS, decodeClip: decodeClip, state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
   go('home');
 })();
