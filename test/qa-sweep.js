@@ -27,7 +27,7 @@ const DIALOG_SKIP = /data-r=/;                 // reset buttons need a 2.5 s pre
     if (vi === 0) {
       const a = await p.evaluate(async () => {
         const sw = await (await fetch('sw.js', { cache: 'no-store' })).text();
-        const listed = [...sw.matchAll(/'\.\/([^']*)'/g)].map(m => m[1] || './');
+        const listed = [...sw.matchAll(/'\.\/([^']*)'/g)].map(m => m[1] || './').filter(u => u === './' || !u.endsWith('/'));   // skip the './audio/' + id prefix
         const man = await (await fetch('manifest.webmanifest', { cache: 'no-store' })).json();
         const ids = new Set(Object.keys(self.TP_CLIPS || {})); Object.values(self.TP_PHONICS || {}).forEach(x => ids.add(x));
         const out = { files: 0, clips: ids.size, bad: [] };
