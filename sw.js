@@ -1,6 +1,6 @@
 /* Typing Pals service worker: precache everything, serve cache-first, works offline.
    Bump VERSION whenever any file changes so the update rolls out on the next online visit. */
-var VERSION = 'typing-pals-v3';
+var VERSION = 'typing-pals-v4';
 importScripts('clips.js', 'phonics.js'); // self.TP_CLIPS (voice clip ids), self.TP_PHONICS (letter sound clip ids)
 var ASSETS = [
   './',

@@ -11,7 +11,8 @@
       kid: { avatar: 'dino', color: '#51cf66', nick: '', stickers: {}, finds: 0, rounds: 0 },
       ninja: { avatar: D.NINJA_AVATARS[0], color: '#339af0', nick: '', xp: 0, m: {}, pb: 0, badges: {}, arcadeHi: 0,
         bestCombo: 0, days: { last: '', count: 0 }, kbSeen: false, introSeen: false },
-      read: { stars: 0, so: { stage: 0, best: {}, plays: 0 }, bl: { plays: 0, best: 0 }, bd: { plays: 0, best: 0, pq: false } } };
+      read: { stars: 0, so: { stage: 0, best: {}, plays: 0 }, bl: { plays: 0, best: 0 }, bd: { plays: 0, best: 0, pq: false },
+        st: { plays: 0, best: 0 }, tr: { plays: 0, best: 0 }, dy: { last: '', days: 0, plays: 0 }, pet: { i: 0, fed: 0, done: [], seen: false }, miss: {} } };
   }
   function merge(base, extra) {
     if (!extra || typeof extra !== 'object') return base;
@@ -404,7 +405,7 @@
     var m = openModal('<h2>For grown-ups</h2>' +
       '<p class="note"><b>Letter Explorer</b> (ages 4\u20136): a talking buddy says each letter and a word, and the matching key glows. Tap the key or press it on a keyboard. No reading needed. Each letter found earns a sticker, and \u{1F3B9} is free play.</p>' +
       '<p class="note"><b>Ninja Keys Academy</b> (ages 8+): real ten-finger touch typing, starting from the home row. Missions earn stars, XP and belts, with a boss battle at the end of each zone and a Meteor Strike arcade game. A real keyboard works best (an iPad with a Bluetooth or Smart Keyboard works too).</p>' +
-      '<p class="note"><b>Reading Fun</b> (kindergarten): three short tap games. <b>Sound It Out</b>: the buddy says each sound of a 3-letter word slowly (c\u2026 a\u2026 t) and your child taps the matching picture; \u{1F442} levels are listening only, \u{1F440} levels light up the letters too. Starts with short a, then e, i, o, u, then a mix; two stars opens the next level (\u{1F5FA}\uFE0F picks any open level). <b>Big and Little</b>: match uppercase and lowercase letters. <b>b or d?</b>: find every b (or d), with the \u201Cbed\u201D trick; p and q join after a good round.</p>' +
+      '<p class="note"><b>Reading Fun</b> (kindergarten): five short tap games (about 2 minutes each) plus a daily review. <b>Sound It Out</b>: the buddy says each sound of a 3-letter word slowly (c\u2026 a\u2026 t) and your child taps the matching picture; \u{1F442} levels are listening only, \u{1F440} levels light up the letters too. Starts with short a, then e, i, o, u, then a mix; two stars opens the next level (\u{1F5FA}\uFE0F picks any open level). <b>Stretchy Sounds</b>: your child slides a snail along the word to stretch the sounds out at their own pace, the word snaps together and is said fast, then they pick the picture (encourage them to say the word out loud before the pictures appear). Uses the vowels opened in Sound It Out. <b>Big and Little</b>: match uppercase and lowercase letters. <b>b or d?</b>: find every b (or d), with the \u201Cbed\u201D trick; p and q join after a good round. <b>Write It</b>: trace b, d (later p, q) in the right order: b starts with the stick, d starts with a c. A ghost pen shows the strokes first. <b>Today\u2019s Treat</b>: 5 mixed quick questions; anything missed in the games comes back here first. Once a day it gives 2 bonus \u{1F34E}. Every star feeds the reading pet: the egg wiggles, hatches, grows, and joins the shelf, then a new egg arrives.</p>' +
       '<p class="note">\u{1F512} No accounts, ads, links or tracking. Nothing is sent anywhere. Progress is saved only on this device and browser. After the first visit it works offline from the Home Screen icon.</p>' +
       '<h3>Reset progress (press and hold)</h3>' +
       '<button class="big-btn red hold" data-r="kid">Reset Letter Explorer</button><button class="big-btn red hold" data-r="ninja">Reset Ninja Academy</button><button class="big-btn red hold" data-r="read">Reset Reading Fun</button>');
@@ -981,17 +982,21 @@
     });
     return p.then(function () { var ok = tok === speakTok; if (ok) setTalk(false); if (onEach) onEach(-1); return ok; });
   }
-  function resultModal(stars, then, extraClip) {
-    S.read.stars = readStars() + stars; save();
+  function resultModal(stars, then, extraClip, opts) {
+    var bonus = (opts && opts.bonus) || 0;
+    S.read.stars = readStars() + stars + bonus; save();
+    var ev = feedPet(stars + bonus);
     SFX.win(); confetti(); if (stars === 3) setTimeout(confetti, 800);
     var m = openModal('<h2>\u{1F389} All done!</h2><div class="res-stars">' + [1, 2, 3].map(function (n) { return '<span class="' + (stars >= n ? '' : 'dimst') + '">\u2B50</span>'; }).join('') + '</div>' +
-      '<p class="note rd-total">\u2B50 ' + readStars() + '</p>' +
+      (bonus ? '<p class="rd-bonus">+' + bonus + ' \u{1F34E}</p>' : '') +
+      '<div class="res-pet ev-' + ev + '">' + petHTML('sm') + '</div>' +
       '<div><button class="big-btn gold rd-big" data-again aria-label="Play again">\u21BB \u25B6</button><button class="big-btn blue rd-big" data-hub aria-label="Reading games">\u{1F4DA}</button></div>',
       { close: false, onEnter: function () { then('again'); }, onEsc: function () { then('hub'); } });
     m.classList.add('results');
     $('[data-again]', m).addEventListener('click', function () { SFX.tap(); then('again'); });
     $('[data-hub]', m).addEventListener('click', function () { SFX.tap(); then('hub'); });
-    speak(['gm-done', extraClip || null]);
+    if (ev === 'hatch' || ev === 'new') setTimeout(function () { SFX.levelup(); confetti(); }, 900); else if (ev === 'grow') setTimeout(SFX.sticker, 900);
+    speak(['gm-done', extraClip || null, 'pt-' + ev]);
   }
   function readTop(title, n) {
     return '<div class="rd-top"><button class="round-btn" data-back aria-label="Back">\u2B05\uFE0F</button><div class="rd-title">' + title + '</div>' + (n ? dots(n) : '') + '</div>';
@@ -1007,19 +1012,27 @@
   /* ----- hub ----- */
   SCREENS.read = function () {
     var s = h('div', 'screen'); s.id = 'read';
-    var so = S.read.so, st = SO_STAGES[Math.min(so.stage, SO_STAGES.length - 1)];
+    var so = S.read.so, st = SO_STAGES[Math.min(so.stage, SO_STAGES.length - 1)], tdone = treatDone();
     s.innerHTML = '<div class="rd-top"><button class="round-btn" data-home aria-label="Home">\u{1F3E0}</button><div class="rd-title">\u{1F4DA} Reading Fun</div><div class="count">\u2B50 ' + readStars() + '</div></div>' +
-      '<div class="rd-hub">' + miniBuddy() +
+      '<div class="rd-hub">' +
+      '<div class="pet-card" role="button" aria-label="My reading pet">' + petHTML('lg') + shelfHTML() + '</div>' +
+      '<div class="rd-right"><button class="rd-daily' + (tdone ? ' done' : '') + '" data-g="dy" aria-label="Today\u2019s Treat"><span class="ic">' + (tdone ? '\u2705' : '\u{1F34E}') + '</span><b>Today\u2019s Treat</b><span class="tag">' + (tdone ? '\u2714\uFE0F' : '+2 \u{1F34E}') + '</span></button>' +
       '<div class="rd-games">' +
       '<button class="rgame so" data-g="so" aria-label="Sound It Out"><span class="ic">\u{1F442}</span><b>Sound It Out</b><span class="demo">c \u00B7 a \u00B7 t = \u{1F431}</span><small>' + (st.v === 'mix' ? 'mix' : st.v) + ' ' + (st.look ? '\u{1F440}' : '\u{1F442}') + '</small></button>' +
+      '<button class="rgame st" data-g="st" aria-label="Stretchy Sounds"><span class="ic">\u{1F40C}</span><b>Stretchy Sounds</b><span class="demo">c\u2014a\u2014t \u2192 cat</span></button>' +
       '<button class="rgame bl" data-g="bl" aria-label="Big and Little"><span class="ic big-little"><span>B</span><span>b</span></span><b>Big and Little</b></button>' +
       '<button class="rgame bd" data-g="bd" aria-label="b or d"><span class="ic bdic"><span>b</span><span class="q">?</span><span>d</span></span><b>b or d?</b></button>' +
-      '</div></div>';
+      '<button class="rgame tr" data-g="tr" aria-label="Write It"><span class="ic">\u270F\uFE0F</span><b>Write It</b><span class="demo">b \u00B7 d</span></button>' +
+      '</div></div></div>';
     app.appendChild(s);
     $('[data-home]', s).addEventListener('click', function () { SFX.tap(); go('home'); });
-    $$('.rgame', s).forEach(function (b) { b.addEventListener('click', function () { SFX.good(); go(b.dataset.g); }); });
-    tickleBuddy(s);
-    speak(['rd-hi']); buddyDo('highfive', 1400);
+    $$('[data-g]', s).forEach(function (b) { b.addEventListener('click', function () { SFX.good(); go(b.dataset.g); }); });
+    var pc = $('.pet-card', s);
+    pc.addEventListener('click', function () {
+      SFX.giggle(); var p = $('.pet', pc); p.classList.remove('boing'); void p.offsetWidth; p.classList.add('boing');
+      speak([petStage(S.read.pet.fed) === 'egg' && S.read.pet.fed >= PET_WIGGLE ? 'pt-wiggle' : 'pt-tap']);
+    });
+    if (!S.read.pet.seen) { S.read.pet.seen = true; save(); speak(['rd-hi', 'pt-hi']); } else speak(['rd-hi']);
     return { onKey: function () {}, onEsc: function () { go('home'); } };
   };
 
@@ -1076,7 +1089,7 @@
       var w = b.dataset.w, r = round;
       if (w === target) {
         busy = true; clearTimeout(hintT); stopVoice();
-        if (!wrong) { firstTry++; }
+        if (!wrong) { firstTry++; miss('w:' + target, -1); }
         fillDot(s, idx, !wrong); SFX.good(); b.classList.add('good');
         $$('.pic-btn', picsEl).forEach(function (o) { if (o !== b) o.classList.add('fade'); });
         var c = center(b); burst(c.x, c.y, ['\u2B50', '\u{1F31F}', '\u2728'], 12);
@@ -1088,7 +1101,7 @@
           .then(function () { return wait(900); })
           .then(function () { if (alive && r === round && !modalEl) next(); });
       } else {
-        wrong++; SFX.oops(); b.classList.add('no'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+        wrong++; if (wrong === 1) miss('w:' + target, 1); SFX.oops(); b.classList.add('no'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
         buddyDo(pick(['silly', 'think']), 1400); bubble(pick(['\u{1F914}', '\u{1F643}']));
         clearTimeout(hintT);
         speak(['oops-' + (1 + Math.floor(Math.random() * 3)), 'so-thatone', 'w-' + w, 'so-again']).then(function () {
@@ -1155,14 +1168,14 @@
       if (busy || b.classList.contains('no')) return;
       var l = b.dataset.l, r = round;
       if (l === want(T)) {
-        busy = true; clearTimeout(hintT); if (!wrong) firstTry++; fillDot(s, idx, !wrong);
+        busy = true; clearTimeout(hintT); if (!wrong) { firstTry++; miss('L:' + T, -1); } fillDot(s, idx, !wrong);
         SFX.good(); b.classList.add('good'); var c = center(b); burst(c.x, c.y, ['\u2B50', '\u2728', '\u{1F31F}'], 12);
         card.innerHTML = '<span class="up">' + T + '</span><span class="lo">' + T.toLowerCase() + '</span>'; card.classList.add('matched');
         buddyDo(pick(['dance', 'cheer', 'highfive', 'spin']), 1800); bubble(pick(['\u{1F60D}', '\u{1F929}', '\u{1F389}']));
         speak(['cheer-' + (1 + Math.floor(Math.random() * 12)), 'bl-' + T.toLowerCase() + '-match']).then(function () { return wait(600); })
           .then(function () { if (alive && r === round && !modalEl) next(); });
       } else {
-        wrong++; SFX.oops(); b.classList.add('no'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+        wrong++; if (wrong === 1) miss('L:' + T, 1); SFX.oops(); b.classList.add('no'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
         buddyDo(pick(['silly', 'think']), 1300); bubble('\u{1F914}');
         if (wrong >= 2) { var g = $('.lt-btn[data-l="' + want(T) + '"]', ch); if (g) g.classList.add('hint'); }
         speak(['oops-' + (1 + Math.floor(Math.random() * 3)), l.toLowerCase() + '-that', 'bl-' + T.toLowerCase() + '-' + dir]); arm();
@@ -1227,12 +1240,12 @@
       if (l === T) {
         b.classList.add('found'); b.classList.remove('hint'); left--; SFX.good(); var c = center(b); burst(c.x, c.y, ['\u2B50', '\u2728'], 8, 90); arm();
         if (left <= 0) {
-          busy = true; clearTimeout(hintT); if (!missed) clean++; fillDot(s, idx, !missed);
+          busy = true; clearTimeout(hintT); if (!missed) { clean++; miss('bd:' + T, -1); } fillDot(s, idx, !missed);
           buddyDo(pick(['dance', 'cheer', 'highfive']), 1800); bubble(pick(['\u{1F575}\uFE0F', '\u{1F929}', '\u{1F389}']));
           speak(['cheer-' + (1 + Math.floor(Math.random() * 12)), 'bd-all']).then(function () { return wait(500); }).then(function () { if (alive && r === round && !modalEl) next(); });
         }
       } else {
-        missed = true; SFX.oops(); b.classList.remove('shake', 'nope'); void b.offsetWidth; b.classList.add('shake', 'nope');
+        if (!missed) miss('bd:' + T, 1); missed = true; SFX.oops(); b.classList.remove('shake', 'nope'); void b.offsetWidth; b.classList.add('shake', 'nope');
         setTimeout(function () { b.classList.remove('nope'); }, 2600);
         buddyDo('think', 1400); bubble('\u{1F914}');
         // gentle correction: show where that letter lives in the clue, then say the trick
@@ -1256,6 +1269,364 @@
     setTimeout(function () { if (alive) next(); }, 400);
     return { onKey: function () {}, onEsc: function () { go('read'); }, cleanup: function () { alive = false; clearTimeout(hintT); },
       state: function () { return { idx: idx, target: T, left: left, clean: clean, busy: busy, plan: plan }; } };
+  };
+
+  /* ================= READING FUN v2: reading pet, Stretchy Sounds, Write It, Today's Treat ================= */
+  // Reading pet: every Reading star feeds it. Egg -> wiggle -> hatch -> grow -> all grown (goes to the shelf, new egg).
+  var PETS = [{ b: '\u{1F425}', g: '\u{1F414}', c: '#ffe066' }, { b: '\u{1F41B}', g: '\u{1F98B}', c: '#8ce99a' }, { b: '\u{1F98E}', g: '\u{1F409}', c: '#63e6be' },
+    { b: '\u{1F436}', g: '\u{1F415}', c: '#ffc078' }, { b: '\u{1F431}', g: '\u{1F408}', c: '#e599f7' }, { b: '\u{1F430}', g: '\u{1F407}', c: '#ffa8a8' }];
+  var PET_WIGGLE = 2, PET_HATCH = 4, PET_BIG = 10, PET_GROWN = 16;
+  function petOf(i) { return PETS[i % PETS.length]; }
+  function petStage(fed) { return fed < PET_HATCH ? 'egg' : fed < PET_BIG ? 'baby' : 'big'; }
+  function petHTML(cls) {
+    var P = S.read.pet, p = petOf(P.i), st = petStage(P.fed), nextAt = st === 'egg' ? PET_HATCH : st === 'baby' ? PET_BIG : PET_GROWN;
+    var face = st === 'egg' ? '<span class="egg' + (P.fed >= PET_WIGGLE ? ' wig' : '') + '"><i class="spot a"></i><i class="spot b"></i><i class="spot c"></i>' + (P.fed >= PET_WIGGLE ? '<i class="crack"></i>' : '') + '</span>' : '<span class="pf">' + (st === 'baby' ? p.b : p.g) + '</span>';
+    var pips = ''; for (var k = 0; k < PET_GROWN; k++) pips += '<i class="' + (k < P.fed ? 'on' : '') + ((k + 1 === PET_HATCH || k + 1 === PET_BIG) ? ' ms' : '') + '"></i>';
+    return '<div class="pet ' + (cls || '') + ' st-' + st + '" style="--pc:' + p.c + '" data-stage="' + st + '"><div class="pet-home">' + face + '</div>' +
+      '<div class="pet-bar" aria-label="' + P.fed + ' of ' + nextAt + '">' + pips + '</div>' +
+      '<div class="pet-goal">' + (nextAt - P.fed) + ' \u2B50 \u2192 ' + (st === 'egg' ? '\u{1F423}' : st === 'baby' ? p.g : '\u{1F3E0}\u{1F95A}') + '</div></div>';
+  }
+  function feedPet(n) {
+    var P = S.read.pet, before = petStage(P.fed), was = P.fed; P.fed += n;
+    if (P.fed >= PET_GROWN) { P.done.push(P.i); P.i++; P.fed -= PET_GROWN; if (P.fed >= PET_HATCH) P.fed = PET_HATCH - 1; save(); return 'new'; }
+    var after = petStage(P.fed); save();
+    if (before === 'egg' && after === 'baby') return 'hatch';
+    if (before === 'baby' && after === 'big') return 'grow';
+    if (before === 'egg' && was < PET_WIGGLE && P.fed >= PET_WIGGLE) return 'wiggle';
+    return 'yum';
+  }
+  function shelfHTML() {
+    var d = S.read.pet.done; if (!d.length) return '';
+    return '<div class="pet-shelf" aria-label="Grown pets">' + d.slice(-8).map(function (i) { return '<span style="--pc:' + petOf(i).c + '">' + petOf(i).g + '</span>'; }).join('') + '</div>';
+  }
+  // adaptive practice: remember what was missed (words, big/little letters, b d p q) and bring it back in Today's Treat
+  function miss(key, d) { var M = S.read.miss; M[key] = Math.max(0, Math.min(5, (M[key] || 0) + d)); if (!M[key]) delete M[key]; }
+  function topMiss(prefix, n) {
+    var M = S.read.miss; return Object.keys(M).filter(function (k) { return k.indexOf(prefix) === 0; })
+      .sort(function (a, b) { return M[b] - M[a]; }).slice(0, n).map(function (k) { return k.slice(prefix.length); });
+  }
+  function today() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+  function treatDone() { return S.read.dy.last === today(); }
+  function openVowels() {
+    var st = SO_STAGES[Math.min(S.read.so.stage, SO_STAGES.length - 1)];
+    return st.v === 'mix' ? RD.VOWELS.slice() : RD.VOWELS.slice(0, RD.VOWELS.indexOf(st.v) + 1);
+  }
+  function openWords() { return openVowels().reduce(function (a, v) { return a.concat(RD.CVC[v]); }, []).filter(canSound); }
+  function cheerId() { return 'cheer-' + (1 + Math.floor(Math.random() * 12)); }
+  function picChoices(target, pool) {
+    var others = shuffle(pool.filter(function (w) { return w !== target && RD.PICS[w] !== RD.PICS[target]; }));
+    others.sort(function (a, b) { return (a[0] === target[0]) - (b[0] === target[0]); });
+    if (others.length < 2) others = others.concat(shuffle(soPool(SO_STAGES[SO_STAGES.length - 1]).filter(function (w) { return w !== target && others.indexOf(w) < 0 && RD.PICS[w] !== RD.PICS[target]; })));
+    return shuffle([target, others[0], others[1]]);
+  }
+  function picsHTML(ws) { return ws.map(function (w) { return '<button class="pic-btn" data-w="' + w + '" aria-label="' + w + '"><span>' + RD.PICS[w] + '</span></button>'; }).join(''); }
+  function shake(b) { b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+
+  /* ----- Stretchy Sounds: slide the snail to stretch c...a...t, let it snap to "cat", pick the picture ----- */
+  SCREENS.st = function () {
+    var N = 5, R = S.read.st, pool = openWords(), alive = true, idx = -1, round = 0, wrong = 0, firstTry = 0, busy = true, target = null;
+    var list = topMiss('w:', 2).filter(function (w) { return pool.indexOf(w) >= 0; });
+    while (list.length < N) list = list.concat(shuffle(pool).filter(function (w) { return list.indexOf(w) < 0 || pool.length < N; }));
+    list = shuffle(list.slice(0, N));
+    var pos = 0, nextL = 0, dragging = false, phase = 'slide', q = Promise.resolve(), hintT = null, slid = false, qBusy = 0;
+    var s = h('div', 'screen'); s.id = 'st';
+    s.innerHTML = readTop('\u{1F40C} Stretchy Sounds', N) +
+      '<div class="st-stage">' + miniBuddy() + '<div class="st-wrap"><div class="st-word" id="word"></div>' +
+      '<div class="st-track" id="track"><i class="st-band" id="band"></i><span class="st-snail" id="snail">\u{1F40C}</span><span class="st-flag">\u{1F3C1}</span><span class="st-demo">\u{1F446}</span></div></div></div>' +
+      '<div class="so-pics st-pics" id="pics"></div>';
+    app.appendChild(s);
+    var wordEl = $('#word', s), track = $('#track', s), snail = $('#snail', s), band = $('#band', s), picsEl = $('#pics', s);
+    preloadClips(Object.keys(PH).map(function (L) { return PH[L]; }).concat(pool.map(function (w) { return 'w-' + w; })));
+    var AT = [0.16, 0.5, 0.84];
+    function setPos(f) { pos = f; snail.style.left = (f * 100) + '%'; band.style.width = (f * 100) + '%'; }
+    function tile(i) { return $('.tile[data-i="' + i + '"]', wordEl); }
+    function hint(r) {
+      clearTimeout(hintT);
+      hintT = setTimeout(function () { if (alive && r === round && phase === 'slide' && !dragging && !modalEl) { track.classList.remove('demo'); void track.offsetWidth; track.classList.add('demo'); speak(['st-tap']); hint(r); } }, slid ? 9000 : 6000);
+    }
+    function next() {
+      if (!alive) return; idx++; round++; wrong = 0;
+      if (idx >= N) return done();
+      target = list[idx]; nextL = 0; phase = 'slide'; setPos(0); q = Promise.resolve(); qBusy = 0;
+      track.classList.remove('done', 'demo'); wordEl.className = 'st-word';
+      wordEl.innerHTML = target.split('').map(function (c, i) { return '<span class="tile" data-i="' + i + '" style="left:' + (AT[i] * 100) + '%">' + c + '</span>'; }).join('');
+      $$('.tile', wordEl).forEach(function (t) { t.addEventListener('click', function () { if (phase === 'pick' || phase === 'slide') { SFX.tap(); speak([PH[target[+t.dataset.i]]]); } }); });
+      picsEl.innerHTML = ''; picsEl.classList.remove('show');
+      busy = false;
+      var intro = idx === 0 && !R.plays ? ['st-hi'] : idx === 0 ? ['st-tap'] : [];
+      speak(intro).then(function () { if (alive && idx === 0 && !R.plays && phase === 'slide' && !dragging) { track.classList.add('demo'); } });
+      hint(round);
+    }
+    function xFrac(e) { var r = track.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); }
+    function sound(i) {
+      var r = round, t = tile(i); qBusy++;
+      q = q.then(function () {
+        if (!alive || r !== round) return;
+        $$('.tile', wordEl).forEach(function (o) { o.classList.remove('on'); }); t.classList.add('on', 'seen');
+        var tok = speakTok; setTalk(true);
+        return (S.muted ? (voiceLog.push(PH[target[i]]), wait(400)) : playClip(PH[target[i]], tok)).then(function () { t.classList.remove('on'); setTalk(false); return wait(120); });
+      }).then(function () { qBusy--; }, function () { qBusy--; });
+    }
+    function move(e) {
+      if (!dragging || phase !== 'slide') return;
+      var f = xFrac(e); if (f < pos) return;
+      // the snail can't skip ahead of a sound: it waits at each letter until that letter starts
+      setPos(Math.min(f, qBusy && nextL < AT.length ? AT[nextL] - 0.02 : 1));
+      while (nextL < AT.length && pos >= AT[nextL]) { sound(nextL); nextL++; }
+      if (pos >= 0.97 && nextL >= AT.length) { dragging = false; snap(); }
+    }
+    track.addEventListener('pointerdown', function (e) {
+      if (busy || phase !== 'slide') return; e.preventDefault();
+      dragging = true; slid = true; track.classList.remove('demo'); clearTimeout(hintT);
+      if (speakTok && !nextL) stopVoice();
+      try { track.setPointerCapture(e.pointerId); } catch (x) { /* ok */ }
+      if (xFrac(e) - pos < 0.12) move(e);
+    });
+    track.addEventListener('pointermove', move);
+    function up() { if (!dragging) return; dragging = false; if (phase === 'slide') hint(round); }
+    track.addEventListener('pointerup', up); track.addEventListener('pointercancel', up);
+    function snap() {
+      phase = 'snap'; var r = round; clearTimeout(hintT);
+      q.then(function () { if (!alive || r !== round) return; return wait(250); }).then(function () {
+        if (!alive || r !== round) return;
+        track.classList.add('done'); wordEl.classList.add('snap'); SFX.sparkle(); buddyDo('cheer', 1200);
+        return speak(['st-snap']);
+      }).then(function () { if (alive && r === round) return wait(200); })
+        .then(function () { if (alive && r === round) return saySounds(target, 220, function (i) { $$('.tile', wordEl).forEach(function (t, j) { t.classList.toggle('on', j === i); }); }); })
+        .then(function () { if (alive && r === round) return wait(1300); })   // time for Rio to say the word out loud
+        .then(function () { if (alive && r === round) showPics(); });
+    }
+    function showPics() {
+      phase = 'pick';
+      picsEl.innerHTML = picsHTML(picChoices(target, pool)); picsEl.classList.add('show');
+      $$('.pic-btn', picsEl).forEach(function (b) { b.addEventListener('click', function () { tap(b); }); });
+      if (idx < 2) speak(['st-which']);
+    }
+    function blendAgain() { return saySounds(target, 220, function (i) { $$('.tile', wordEl).forEach(function (t, j) { t.classList.toggle('on', j === i); }); }); }
+    function tap(b) {
+      if (phase !== 'pick' || b.classList.contains('no')) return;
+      var w = b.dataset.w, r = round;
+      if (w === target) {
+        phase = 'won'; stopVoice(); if (!wrong) { firstTry++; miss('w:' + target, -1); }
+        fillDot(s, idx, !wrong); SFX.good(); b.classList.add('good');
+        $$('.pic-btn', picsEl).forEach(function (o) { if (o !== b) o.classList.add('fade'); });
+        var c = center(b); burst(c.x, c.y, ['\u2B50', '\u{1F31F}', '\u2728'], 12);
+        buddyDo(pick(['dance', 'cheer', 'highfive']), 2000); bubble(pick(['\u{1F60D}', '\u{1F929}', '\u{1F389}']));
+        speak([cheerId(), 'w-' + target]).then(function () { return wait(800); }).then(function () { if (alive && r === round && !modalEl) next(); });
+      } else {
+        wrong++; if (wrong === 1) miss('w:' + target, 1); SFX.oops(); b.classList.add('no'); shake(b);
+        buddyDo('think', 1400); bubble('\u{1F914}');
+        speak(['oops-' + (1 + Math.floor(Math.random() * 3)), 'so-thatone', 'w-' + w, 'so-again']).then(function () { if (alive && r === round && phase === 'pick') return blendAgain(); });
+      }
+    }
+    function done() {
+      busy = true; phase = 'end'; var stars = sessionStars(firstTry, N); R.plays = (R.plays || 0) + 1; R.best = Math.max(R.best || 0, stars); save();
+      resultModal(stars, function (w) { go(w === 'again' ? 'st' : 'read'); }, 'st-done');
+    }
+    $('[data-back]', s).addEventListener('click', function () { SFX.tap(); go('read'); });
+    tickleBuddy(s);
+    setTimeout(function () { if (alive) next(); }, 400);
+    return { onKey: function () {}, onEsc: function () { go('read'); }, cleanup: function () { alive = false; clearTimeout(hintT); },
+      state: function () { return { idx: idx, target: target, list: list, phase: phase, pos: pos, nextL: nextL, firstTry: firstTry, busy: busy, at: AT }; } };
+  };
+
+  /* ----- Write It: trace b d p q in the right stroke order (b = stick first, d = c first) ----- */
+  // viewBox 0 0 200 270: top line y30, middle y110, base y190, below-line y250. Tummy/c is a circle at (110,150) r40.
+  var C_ARC = 'M144.6 130 A40 40 0 1 0 144.6 170';
+  var STROKES = {
+    b: ['M70 30 L70 190', 'M70 150 A40 40 0 1 1 70 151'],
+    d: [C_ARC, 'M150 30 L150 190'],
+    p: ['M70 110 L70 250', 'M70 150 A40 40 0 1 1 70 151'],
+    q: [C_ARC, 'M150 110 L150 250']
+  };
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs, parent) { var e = document.createElementNS(SVGNS, tag); Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); }); if (parent) parent.appendChild(e); return e; }
+  SCREENS.tr = function () {
+    var R = S.read.tr, alive = true, idx = -1, round = 0, clean = 0, busy = true, L = null, told = {}, hintT = null;
+    var plan = S.read.bd.pq ? ['b', 'd'].concat(shuffle(['p', 'q'])).concat([pick(['b', 'd'])]) : ['b', 'd', 'b', 'd'];
+    var N = plan.length;
+    var s = h('div', 'screen'); s.id = 'tr';
+    s.innerHTML = readTop('\u270F\uFE0F Write It', N) +
+      '<div class="tr-stage">' + miniBuddy() + '<div class="tr-box"><svg id="trsvg" viewBox="0 0 200 270" aria-label="Trace the letter"></svg></div>' +
+      '<div class="tr-side"><button class="bd-ask tr-ask" id="ask" aria-label="Show me again"></button><div class="tr-tip" id="tip"></div></div></div>';
+    app.appendChild(s);
+    var svg = $('#trsvg', s), ask = $('#ask', s), tip = $('#tip', s);
+    var strokes = [], si = 0, k = 0, drawing = false, strayed = false, startDot = null, arrow = null;
+    function tipHTML(l) { return l === 'b' || l === 'p' ? '<b>1</b> \u2B07\uFE0F <b>2</b> \u21BB' : '<b>1</b> c <b>2</b> \u2B07\uFE0F'; }
+    function build() {
+      svg.innerHTML = '';
+      var desc = L === 'p' || L === 'q';
+      svgEl('line', { x1: 8, x2: 192, y1: 30, y2: 30, class: 'gl top' }, svg);
+      svgEl('line', { x1: 8, x2: 192, y1: 110, y2: 110, class: 'gl mid' }, svg);
+      svgEl('line', { x1: 8, x2: 192, y1: 190, y2: 190, class: 'gl base' }, svg);
+      if (desc) svgEl('line', { x1: 8, x2: 192, y1: 250, y2: 250, class: 'gl mid' }, svg);
+      strokes = STROKES[L].map(function (d) {
+        var g = svgEl('path', { d: d, class: 'tr-guide' }, svg); svgEl('path', { d: d, class: 'tr-dots' }, svg);
+        var len = g.getTotalLength(), pts = [];
+        for (var l = 0; l <= len; l += 3) { var p = g.getPointAtLength(l); pts.push({ x: p.x, y: p.y, l: l }); }
+        return { d: d, len: len, pts: pts };
+      });
+      strokes.forEach(function (st) { st.ink = svgEl('path', { d: st.d, class: 'tr-ink', 'stroke-dasharray': st.len + ' ' + st.len, 'stroke-dashoffset': st.len }, svg); });
+      arrow = svgEl('path', { d: 'M-9 -8 L9 0 L-9 8 Z', class: 'tr-arrow' }, svg);
+      startDot = svgEl('g', { class: 'tr-start' }, svg); svgEl('circle', { r: 15 }, startDot); svgEl('text', { y: 6 }, startDot);
+      si = 0; k = 0; mark();
+    }
+    function mark() {
+      var st = strokes[si]; if (!st) { startDot.style.display = 'none'; arrow.style.display = 'none'; return; }
+      var p = st.pts[k], a = st.pts[Math.min(k + 5, st.pts.length - 1)];
+      startDot.style.display = ''; startDot.setAttribute('transform', 'translate(' + p.x + ' ' + p.y + ')'); startDot.lastChild.textContent = k ? '' : (si + 1);
+      var ang = Math.atan2(a.y - p.y, a.x - p.x) * 180 / Math.PI, ap = st.pts[Math.min(k + 9, st.pts.length - 1)];
+      arrow.style.display = ''; arrow.setAttribute('transform', 'translate(' + ap.x + ' ' + ap.y + ') rotate(' + ang + ')');
+    }
+    function ink(st, l) { st.ink.setAttribute('stroke-dashoffset', Math.max(0, st.len - l)); }
+    function demo() {
+      // a ghost pen draws the letter once, in the right order, while the voice explains
+      busy = true; var r = round; s.classList.add('demoing');
+      var p = Promise.resolve();
+      strokes.forEach(function (st) {
+        p = p.then(function () {
+          if (!alive || r !== round) return;
+          var t0 = performance.now(), dur = 1100;
+          return new Promise(function (res) {
+            (function f(t) { if (!alive || r !== round) return res(); var u = Math.min(1, (t - t0) / dur); ink(st, st.len * u); if (u < 1) requestAnimationFrame(f); else setTimeout(res, 250); })(t0);
+          });
+        });
+      });
+      return p.then(function () { return wait(350); }).then(function () {
+        if (!alive || r !== round) return;
+        strokes.forEach(function (st) { ink(st, 0); }); s.classList.remove('demoing'); si = 0; k = 0; mark(); busy = false; arm();
+      });
+    }
+    function arm() {
+      clearTimeout(hintT); var r = round;
+      hintT = setTimeout(function () { if (alive && r === round && !busy && !drawing && !modalEl) { startDot.classList.remove('pulse'); void startDot.getBBox(); startDot.classList.add('pulse'); speak(['tr-keep']); arm(); } }, 9000);
+    }
+    function toSvg(e) { var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; var m = svg.getScreenCTM(); return m ? pt.matrixTransform(m.inverse()) : { x: 0, y: 0 }; }
+    function dist(a, b) { return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)); }
+    function next() {
+      if (!alive) return; idx++; round++; strayed = false;
+      if (idx >= N) return done();
+      L = plan[idx]; build();
+      ask.innerHTML = '<span class="tl">' + L + '</span>'; tip.innerHTML = tipHTML(L);
+      var intro = idx === 0 && !R.plays ? ['tr-hi'] : [];
+      if (!told[L]) { intro.push('tr-' + L + '-how'); told[L] = true; }
+      speak(intro); demo();
+    }
+    svg.addEventListener('pointerdown', function (e) {
+      if (busy || !strokes[si]) return; e.preventDefault();
+      var p = toSvg(e), st = strokes[si];
+      if (dist(p, st.pts[k]) < 36) { drawing = true; clearTimeout(hintT); try { svg.setPointerCapture(e.pointerId); } catch (x) { /* ok */ } if (!k) SFX.tap(); }
+      else { startDot.classList.remove('pulse'); void startDot.getBBox(); startDot.classList.add('pulse'); }
+    });
+    svg.addEventListener('pointermove', function (e) {
+      if (!drawing || busy) return;
+      var p = toSvg(e), st = strokes[si], best = -1, bd = 1e9;
+      for (var j = k; j < Math.min(k + 14, st.pts.length); j++) { var dd = dist(p, st.pts[j]); if (dd < bd) { bd = dd; best = j; } }
+      if (bd > 58) { drawing = false; strayed = true; mark(); arm(); return; }   // wandered off: just pick up where it stopped
+      if (bd < 34 && best > k) { k = best; ink(st, st.pts[k].l); mark(); }
+      if (k >= st.pts.length - 2) {
+        ink(st, st.len); drawing = false; si++; k = 0; SFX.good();
+        var c = st.pts[st.pts.length - 1], m = svg.getScreenCTM(); if (m) { var sp = svg.createSVGPoint(); sp.x = c.x; sp.y = c.y; sp = sp.matrixTransform(m); burst(sp.x, sp.y, ['\u2728', '\u2B50'], 6, 70); }
+        if (si >= strokes.length) letterDone(); else { mark(); arm(); }
+      }
+    });
+    function lift() { if (drawing) { drawing = false; arm(); } }
+    svg.addEventListener('pointerup', lift); svg.addEventListener('pointercancel', lift);
+    function letterDone() {
+      busy = true; clearTimeout(hintT); var r = round; mark();
+      if (!strayed) clean++; fillDot(s, idx, !strayed);
+      svg.classList.add('made'); setTimeout(function () { svg.classList.remove('made'); }, 1600);
+      buddyDo(pick(['dance', 'cheer', 'highfive']), 1800); bubble(pick(['\u{1F929}', '\u{1F389}', '\u270F\uFE0F']));
+      speak([cheerId(), 'tr-' + L + '-made']).then(function () { return wait(500); }).then(function () { if (alive && r === round && !modalEl) next(); });
+    }
+    function done() {
+      busy = true; var stars = Math.max(2, sessionStars(clean, N)); R.plays = (R.plays || 0) + 1; R.best = Math.max(R.best || 0, stars); save();
+      resultModal(stars, function (w) { go(w === 'again' ? 'tr' : 'read'); }, 'tr-done');
+    }
+    ask.addEventListener('click', function () { if (busy) return; SFX.tap(); clearTimeout(hintT); speak(['tr-' + L + '-how']); strokes.forEach(function (st) { ink(st, 0); }); si = 0; k = 0; round++; demo(); });
+    $('[data-back]', s).addEventListener('click', function () { SFX.tap(); go('read'); });
+    tickleBuddy(s);
+    setTimeout(function () { if (alive) next(); }, 400);
+    return { onKey: function () {}, onEsc: function () { go('read'); }, cleanup: function () { alive = false; clearTimeout(hintT); },
+      state: function () { return { idx: idx, letter: L, stroke: si, k: k, busy: busy, clean: clean, plan: plan, strokes: strokes.map(function (st) { return st.pts.map(function (p) { return [p.x, p.y]; }); }) }; } };
+  };
+
+  /* ----- Today's Treat: 5 quick mixed questions, missed things come back first; once a day it gives the pet a treat ----- */
+  SCREENS.dy = function () {
+    var R = S.read.dy, alive = true, idx = -1, round = 0, wrong = 0, firstTry = 0, busy = true, it = null, hintT = null;
+    var words = openWords(), mw = topMiss('w:', 2).filter(function (w) { return words.indexOf(w) >= 0; });
+    var ml = topMiss('L:', 2), mb = topMiss('bd:', 1), bdSet = S.read.bd.pq ? ['b', 'd', 'p', 'q'] : ['b', 'd'];
+    var wq = mw.concat(shuffle(words).filter(function (w) { return mw.indexOf(w) < 0; })).slice(0, 2);
+    var lq = ml.concat(shuffle(RD.TRICKY.split('')).filter(function (L) { return ml.indexOf(L) < 0; })).slice(0, 2);
+    var bq = mb.length ? mb[0] : pick(bdSet);
+    var items = [{ t: 'so', w: wq[0] }, { t: 'bl', L: lq[0] }, { t: 'bd', l: bq }, { t: 'so', w: wq[1] || wq[0] }, { t: 'bl', L: lq[1] }];
+    var N = items.length;
+    var s = h('div', 'screen'); s.id = 'dy';
+    s.innerHTML = readTop('\u{1F34E} Today\u2019s Treat', N) + '<div class="dy-stage">' + miniBuddy() + '<div class="dy-q" id="q"></div></div><div class="dy-choices" id="ch"></div>';
+    app.appendChild(s);
+    var qEl = $('#q', s), ch = $('#ch', s);
+    preloadClips(Object.keys(PH).map(function (L) { return PH[L]; }).concat(wq.map(function (w) { return 'w-' + w; })));
+    function prompt() {
+      if (it.t === 'so') return saySounds(it.w, 750, null);
+      if (it.t === 'bl') return speak(['bl-' + it.L.toLowerCase() + '-little']);
+      return speak([it.l + '-find']);
+    }
+    function arm() { clearTimeout(hintT); var r = round; hintT = setTimeout(function () { if (alive && r === round && !busy && !modalEl) prompt(); }, 11000); }
+    function next() {
+      if (!alive) return; idx++; round++; wrong = 0;
+      if (idx >= N) return done();
+      it = items[idx]; var opts, html;
+      if (it.t === 'so') {
+        qEl.innerHTML = '<button class="so-replay dy-ear" data-p aria-label="Hear it again">\u{1F442}\u{1F50A}</button>';
+        opts = picChoices(it.w, words.length >= 3 ? words : soPool(SO_STAGES[SO_STAGES.length - 1])); it.want = it.w;
+        html = picsHTML(opts); ch.className = 'dy-choices so-pics';
+      } else if (it.t === 'bl') {
+        qEl.innerHTML = '<div class="bl-card pop" data-p role="button" aria-label="Hear it again"><span class="up">' + it.L + '</span><small>\u2192 \u{1F539}</small></div>';
+        it.want = it.L.toLowerCase();
+        opts = shuffle([it.want].concat(shuffle(RD.LOOKS[it.want].split('')).slice(0, 2)));
+        html = opts.map(function (o) { return '<button class="lt-btn" data-w="' + o + '" aria-label="' + o + '">' + o + '</button>'; }).join(''); ch.className = 'dy-choices bl-choices';
+      } else {
+        qEl.innerHTML = '<button class="bd-ask" data-p aria-label="Hear it again"><span class="mag">\u{1F50D}</span><span class="tl">' + it.l + '</span></button>' + ((it.l === 'b' || it.l === 'd') ? bedClue() : pqClue());
+        it.want = it.l;
+        html = shuffle([it.l, TWIN[it.l]]).map(function (o) { return '<button class="bd-t" data-w="' + o + '" aria-label="' + o + '">' + o + '</button>'; }).join(''); ch.className = 'dy-choices dy-two';
+      }
+      ch.innerHTML = html;
+      $$('[data-w]', ch).forEach(function (b) { b.addEventListener('click', function () { tap(b); }); });
+      $('[data-p]', qEl).addEventListener('click', function () { if (!busy) { SFX.tap(); prompt(); } });
+      busy = false;
+      (idx === 0 ? speak(['dy-hi']).then(function () { return wait(250); }) : wait(150)).then(function () { if (alive && !busy && it === items[idx]) prompt(); });
+      arm();
+    }
+    function key() { return it.t === 'so' ? 'w:' + it.w : it.t === 'bl' ? 'L:' + it.L : 'bd:' + it.l; }
+    function tap(b) {
+      if (busy || b.classList.contains('no')) return;
+      var w = b.dataset.w, r = round;
+      if (w === it.want) {
+        busy = true; clearTimeout(hintT); stopVoice(); if (!wrong) { firstTry++; miss(key(), -1); }
+        fillDot(s, idx, !wrong); SFX.good(); b.classList.add('good', 'found'); var c = center(b); burst(c.x, c.y, ['\u{1F34E}', '\u2B50', '\u2728'], 12);
+        buddyDo(pick(['dance', 'cheer', 'highfive']), 1800); bubble(pick(['\u{1F60D}', '\u{1F929}', '\u{1F389}']));
+        var after = it.t === 'so' ? ['w-' + it.w] : it.t === 'bl' ? ['bl-' + it.L.toLowerCase() + '-match'] : [];
+        speak([cheerId()].concat(after)).then(function () { return wait(500); }).then(function () { if (alive && r === round && !modalEl) next(); });
+      } else {
+        wrong++; if (wrong === 1) miss(key(), 2); SFX.oops(); b.classList.add('no'); shake(b);
+        buddyDo('think', 1300); bubble('\u{1F914}');
+        if (wrong >= 2) { var g = $('[data-w="' + it.want + '"]', ch); if (g) g.classList.add('hint'); }
+        var say = it.t === 'so' ? ['so-thatone', 'w-' + w, 'so-again'] : it.t === 'bl' ? [w.toLowerCase() + '-that'] : [w + '-that', (it.l === 'b' || it.l === 'd') ? 'bd-bed' : 'bd-pq'];
+        speak(['oops-' + (1 + Math.floor(Math.random() * 3))].concat(say)).then(function () { if (alive && r === round && !busy) prompt(); });
+        arm();
+      }
+    }
+    function done() {
+      busy = true; var stars = sessionStars(firstTry, N), first = !treatDone();
+      if (first) { R.last = today(); R.days = (R.days || 0) + 1; }
+      R.plays = (R.plays || 0) + 1; save();
+      resultModal(stars, function (w) { go(w === 'again' ? 'dy' : 'read'); }, first ? 'dy-done' : null, { bonus: first ? 2 : 0 });
+    }
+    $('[data-back]', s).addEventListener('click', function () { SFX.tap(); go('read'); });
+    tickleBuddy(s);
+    setTimeout(function () { if (alive) next(); }, 400);
+    return { onKey: function () {}, onEsc: function () { go('read'); }, cleanup: function () { alive = false; clearTimeout(hintT); },
+      state: function () { return { idx: idx, item: it, items: items, firstTry: firstTry, busy: busy }; } };
   };
 
   /* ================= global input ================= */
@@ -1290,6 +1661,6 @@
   }
 
   // test/debug hook (local only)
-  window.__tp = { soStages: SO_STAGES, soPool: soPool, phonics: PH, canSound: canSound, kidProgress: kidProgress, migrateKid: migrateKid, voiceStats: voiceStats, voiceLog: voiceLog, clips: CLIPS, decodeClip: decodeClip, state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
+  window.__tp = { petStage: petStage, feedPet: feedPet, strokes: STROKES, today: today, soStages: SO_STAGES, soPool: soPool, phonics: PH, canSound: canSound, kidProgress: kidProgress, migrateKid: migrateKid, voiceStats: voiceStats, voiceLog: voiceLog, clips: CLIPS, decodeClip: decodeClip, state: function () { return S; }, screen: function () { return cur && cur.name; }, cur: function () { return cur; }, go: go, missions: MISSIONS, unlockedKeys: unlockedKeys, keysFor: keysFor };
   go('home');
 })();
